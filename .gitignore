@@ -1,0 +1,30 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+.flattened-pom.xml
+
+# Java
+*.class
+*.log
+hs_err_pid*
+
+# Node and Vite
+node_modules/
+dist/
+*.local
+*.tsbuildinfo
+
+# IDEs and operating systems
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Local environment files
+.env
+.env.*
+!.env.example
