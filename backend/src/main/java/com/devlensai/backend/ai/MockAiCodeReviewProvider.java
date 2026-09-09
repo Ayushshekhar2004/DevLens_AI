@@ -1,7 +1,9 @@
 package com.devlensai.backend.ai;
 
 import com.devlensai.backend.dto.CodeReviewResult;
+import com.devlensai.backend.dto.GeneratedTestCaseResult;
 import com.devlensai.backend.entity.ProgrammingLanguage;
+import com.devlensai.backend.entity.TestCaseCategory;
 
 import java.util.List;
 
@@ -18,7 +20,15 @@ public class MockAiCodeReviewProvider implements AiCodeReviewProvider {
                 "Not evaluated by the mock provider",
                 List.of("Mock provider: edge cases were not evaluated."),
                 List.of("Configure a real AI provider in a future implementation for code-specific feedback."),
-                sourceCode
+                sourceCode,
+                List.of(new GeneratedTestCaseResult(
+                        "Mock placeholder",
+                        TestCaseCategory.NORMAL,
+                        "",
+                        "",
+                        "The mock provider does not infer executable behavior.",
+                        "WARNING: Expected output is intentionally omitted because no AI review was performed."
+                ))
         );
     }
 

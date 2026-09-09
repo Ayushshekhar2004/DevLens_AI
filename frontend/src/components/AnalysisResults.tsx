@@ -2,6 +2,7 @@ import type { AnalysisResponse } from '../types/analysis'
 import { AnalysisSummary } from './AnalysisSummary'
 import { ComplexityAnalysis } from './ComplexityAnalysis'
 import { EdgeCases } from './EdgeCases'
+import { GeneratedTestCases } from './GeneratedTestCases'
 import { ImprovedCode } from './ImprovedCode'
 import { PotentialBugs } from './PotentialBugs'
 import { Suggestions } from './Suggestions'
@@ -42,6 +43,7 @@ export function AnalysisResults({ analysis, onReset }: AnalysisResultsProps) {
           <PotentialBugs bugs={analysis.result.potentialBugs} />
           <EdgeCases edgeCases={analysis.result.edgeCases} />
           <Suggestions suggestions={analysis.result.suggestions} />
+          <GeneratedTestCases testCases={analysis.result.generatedTestCases} />
           <ImprovedCode code={analysis.result.improvedCode} />
         </div>
       ) : (

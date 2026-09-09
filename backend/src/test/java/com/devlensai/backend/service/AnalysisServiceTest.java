@@ -3,9 +3,11 @@ package com.devlensai.backend.service;
 import com.devlensai.backend.dto.AnalysisResponse;
 import com.devlensai.backend.dto.CodeReviewResult;
 import com.devlensai.backend.dto.CreateAnalysisRequest;
+import com.devlensai.backend.dto.GeneratedTestCaseResult;
 import com.devlensai.backend.entity.Analysis;
 import com.devlensai.backend.entity.AnalysisStatus;
 import com.devlensai.backend.entity.ProgrammingLanguage;
+import com.devlensai.backend.entity.TestCaseCategory;
 import com.devlensai.backend.exception.AiProviderMalformedResponseException;
 import com.devlensai.backend.exception.AiProviderTimeoutException;
 import com.devlensai.backend.exception.AnalysisReviewFailedException;
@@ -104,7 +106,15 @@ class AnalysisServiceTest {
                 "O(1)",
                 List.of("Empty input"),
                 List.of("Add documentation"),
-                "class Main {}"
+                "class Main {}",
+                List.of(new GeneratedTestCaseResult(
+                        "Creates an instance",
+                        TestCaseCategory.NORMAL,
+                        "new Main()",
+                        "A Main instance",
+                        "Covers normal construction",
+                        "High confidence"
+                ))
         );
     }
 }

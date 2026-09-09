@@ -26,6 +26,10 @@ class DefaultCodeReviewServiceTest {
         assertThat(result.edgeCases()).isNotEmpty();
         assertThat(result.suggestions()).isNotEmpty();
         assertThat(result.improvedCode()).isEqualTo(sourceCode);
+        assertThat(result.generatedTestCases()).singleElement().satisfies(testCase -> {
+            assertThat(testCase.expectedOutput()).isEmpty();
+            assertThat(testCase.confidenceOrWarning()).startsWith("WARNING:");
+        });
     }
 
     @Test

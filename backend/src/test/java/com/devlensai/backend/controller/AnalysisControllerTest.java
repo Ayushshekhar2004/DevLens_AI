@@ -3,8 +3,10 @@ package com.devlensai.backend.controller;
 import com.devlensai.backend.dto.AnalysisResponse;
 import com.devlensai.backend.dto.CodeReviewResult;
 import com.devlensai.backend.dto.CreateAnalysisRequest;
+import com.devlensai.backend.dto.GeneratedTestCaseResult;
 import com.devlensai.backend.entity.AnalysisStatus;
 import com.devlensai.backend.entity.ProgrammingLanguage;
+import com.devlensai.backend.entity.TestCaseCategory;
 import com.devlensai.backend.exception.AnalysisNotFoundException;
 import com.devlensai.backend.exception.AnalysisReviewFailedException;
 import com.devlensai.backend.service.AnalysisService;
@@ -54,7 +56,8 @@ class AnalysisControllerTest {
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.language").value("JAVA"))
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
-                .andExpect(jsonPath("$.result.summary").value("Review summary"));
+                .andExpect(jsonPath("$.result.summary").value("Review summary"))
+                .andExpect(jsonPath("$.result.generatedTestCases[0].category").value("NORMAL"));
     }
 
     @Test
@@ -145,7 +148,15 @@ class AnalysisControllerTest {
                         "O(1)",
                         List.of(),
                         List.of("Keep it readable"),
-                        "source code"
+                        "source code",
+                        List.of(new GeneratedTestCaseResult(
+                                "Normal input",
+                                TestCaseCategory.NORMAL,
+                                "source code",
+                                "Expected result",
+                                "Covers normal behavior",
+                                "High confidence"
+                        ))
                 ),
                 null
         );

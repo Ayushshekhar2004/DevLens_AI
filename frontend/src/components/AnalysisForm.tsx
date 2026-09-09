@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { AnalysisResults } from './AnalysisResults'
 import { createAnalysis } from '../services/analysisApi'
 import type { AnalysisResponse, ProgrammingLanguage } from '../types/analysis'
@@ -48,6 +48,16 @@ export function AnalysisForm() {
     requestAnimationFrame(() => sourceCodeRef.current?.focus())
   }
 
+  function handleLanguageChange(event: ChangeEvent<HTMLSelectElement>) {
+    setLanguage(event.target.value as ProgrammingLanguage)
+    setSubmission({ state: 'idle' })
+  }
+
+  function handleSourceCodeChange(event: ChangeEvent<HTMLTextAreaElement>) {
+    setSourceCode(event.target.value)
+    setSubmission({ state: 'idle' })
+  }
+
   return (
     <section className="workspace" aria-labelledby="workspace-title">
       <div className="workspace-heading">
@@ -55,7 +65,7 @@ export function AnalysisForm() {
           <p className="section-kicker">New analysis</p>
           <h2 id="workspace-title">Review your code</h2>
         </div>
-        <span className="day-badge">Day 11</span>
+        <span className="day-badge">MVP</span>
       </div>
 
       <form onSubmit={handleSubmit} noValidate>
@@ -63,7 +73,7 @@ export function AnalysisForm() {
         <select
           id="language"
           value={language}
-          onChange={(event) => setLanguage(event.target.value as ProgrammingLanguage)}
+          onChange={handleLanguageChange}
           disabled={submission.state === 'loading'}
         >
           {languages.map((option) => (
@@ -79,7 +89,7 @@ export function AnalysisForm() {
           ref={sourceCodeRef}
           id="source-code"
           value={sourceCode}
-          onChange={(event) => setSourceCode(event.target.value)}
+          onChange={handleSourceCodeChange}
           placeholder="Paste your code here…"
           spellCheck={false}
           aria-invalid={submission.state === 'error' && !sourceCode.trim()}

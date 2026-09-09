@@ -72,6 +72,11 @@ public class Analysis {
     @Column(name = "improved_code", columnDefinition = "TEXT")
     private String improvedCode;
 
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "analysis_generated_test_cases", joinColumns = @JoinColumn(name = "analysis_id"))
+    @OrderColumn(name = "item_order")
+    private List<GeneratedTestCase> generatedTestCases = new ArrayList<>();
+
     @Column(name = "failure_reason", columnDefinition = "TEXT")
     private String failureReason;
 
@@ -95,6 +100,10 @@ public class Analysis {
         this.suggestions.clear();
         this.suggestions.addAll(result.suggestions());
         this.improvedCode = result.improvedCode();
+        this.generatedTestCases.clear();
+        result.generatedTestCases().stream()
+                .map(GeneratedTestCase::new)
+                .forEach(this.generatedTestCases::add);
         this.failureReason = null;
         this.status = AnalysisStatus.COMPLETED;
     }
@@ -145,7 +154,10 @@ public class Analysis {
                 spaceComplexity,
                 edgeCases,
                 suggestions,
-                improvedCode
+                improvedCode,
+                generatedTestCases.stream()
+                        .map(GeneratedTestCase::toResult)
+                        .toList()
         );
     }
 

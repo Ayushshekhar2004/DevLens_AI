@@ -9,12 +9,14 @@ public record CodeReviewResult(
         String spaceComplexity,
         List<String> edgeCases,
         List<String> suggestions,
-        String improvedCode
+        String improvedCode,
+        List<GeneratedTestCaseResult> generatedTestCases
 ) {
 
     public CodeReviewResult {
         potentialBugs = List.copyOf(potentialBugs);
         edgeCases = List.copyOf(edgeCases);
         suggestions = List.copyOf(suggestions);
+        generatedTestCases = List.copyOf(generatedTestCases);
     }
 }

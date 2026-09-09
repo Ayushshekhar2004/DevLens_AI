@@ -37,7 +37,10 @@ class OpenAiCompatibleCodeReviewProviderTest {
         String resultJson = """
                 {"summary":"Looks good","potentialBugs":[],"timeComplexity":"O(1)",
                 "spaceComplexity":"O(1)","edgeCases":["Empty input"],
-                "suggestions":["Add documentation"],"improvedCode":"public class Main {}"}
+                "suggestions":["Add documentation"],"improvedCode":"public class Main {}",
+                "generatedTestCases":[{"name":"Basic construction","category":"NORMAL",
+                "input":"Create a Main instance","expectedOutput":"Instance is created",
+                "explanation":"Covers the implicit constructor","confidenceOrWarning":"High confidence"}]}
                 """;
         String providerResponse = objectMapper.writeValueAsString(java.util.Map.of(
                 "choices", List.of(java.util.Map.of(
@@ -47,7 +50,14 @@ class OpenAiCompatibleCodeReviewProviderTest {
         HttpServer server = server(exchange -> {
             String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             assertThat(exchange.getRequestHeaders().getFirst("Authorization")).isEqualTo("Bearer test-key");
-            assertThat(requestBody).contains("json_schema", "additionalProperties", "JAVA", "public class Main {}");
+            assertThat(requestBody).contains(
+                    "json_schema",
+                    "additionalProperties",
+                    "generatedTestCases",
+                    "Do not fabricate an expected output",
+                    "JAVA",
+                    "public class Main {}"
+            );
             respond(exchange, 200, providerResponse);
         });
 
@@ -57,6 +67,11 @@ class OpenAiCompatibleCodeReviewProviderTest {
         assertThat(result.summary()).isEqualTo("Looks good");
         assertThat(result.edgeCases()).containsExactly("Empty input");
         assertThat(result.improvedCode()).isEqualTo("public class Main {}");
+        assertThat(result.generatedTestCases()).singleElement().satisfies(testCase -> {
+            assertThat(testCase.name()).isEqualTo("Basic construction");
+            assertThat(testCase.category().name()).isEqualTo("NORMAL");
+            assertThat(testCase.confidenceOrWarning()).isEqualTo("High confidence");
+        });
     }
 
     @Test
@@ -70,6 +85,26 @@ class OpenAiCompatibleCodeReviewProviderTest {
 
         assertThatThrownBy(() -> provider(server, Duration.ofSeconds(2))
                 .review(ProgrammingLanguage.PYTHON, "print('hello')"))
+                .isInstanceOf(AiProviderMalformedResponseException.class);
+    }
+
+    @Test
+    void rejectsUnsupportedTestCaseCategory() throws Exception {
+        String resultJson = """
+                {"summary":"Review","potentialBugs":[],"timeComplexity":"Unknown",
+                "spaceComplexity":"Unknown","edgeCases":[],"suggestions":[],"improvedCode":"code",
+                "generatedTestCases":[{"name":"Example","category":"SECURITY","input":"",
+                "expectedOutput":"","explanation":"Example","confidenceOrWarning":"Uncertain"}]}
+                """;
+        String response = objectMapper.writeValueAsString(java.util.Map.of(
+                "choices", List.of(java.util.Map.of(
+                        "message", java.util.Map.of("content", resultJson)
+                ))
+        ));
+        HttpServer server = server(exchange -> respond(exchange, 200, response));
+
+        assertThatThrownBy(() -> provider(server, Duration.ofSeconds(2))
+                .review(ProgrammingLanguage.JAVA, "code"))
                 .isInstanceOf(AiProviderMalformedResponseException.class);
     }
 

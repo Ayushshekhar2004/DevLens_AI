@@ -1,6 +1,20 @@
 # DevLens AI
 
-DevLens AI is an incrementally built code-review and test-generation platform. The application currently accepts code submissions from React, stores analyses through the Spring Boot API, and displays the saved analysis metadata.
+DevLens AI is an AI-assisted code-review and test-case-generation MVP. It accepts source code in a React interface, reviews it through a configurable AI provider, persists the structured result in PostgreSQL, and presents readable feedback without executing submitted code.
+
+## MVP features
+
+- Submit Java, Python, JavaScript, or C++ source code from the browser.
+- Validate empty submissions and show loading, success, provider, and network errors.
+- Use a clearly labeled mock provider locally or an OpenAI-compatible provider configured with environment variables.
+- Return and persist a structured summary, potential bugs, time and space complexity, edge cases, suggestions, and improved code.
+- Generate and persist categorized test-case suggestions with input, expected output, explanation, and confidence or uncertainty warnings.
+- Reload stored analyses through `GET /api/analyses/{id}` and list analyses newest first through `GET /api/analyses`.
+- Display structured review sections and generated test cases without exposing raw JSON.
+- Copy improved code to the clipboard and reset the editor for a new analysis.
+- Keep failed AI analyses stored with a safe failure reason.
+
+The MVP does not include authentication, a frontend history screen, security review, or execution of submitted code.
 
 ## Prerequisites
 
@@ -29,7 +43,7 @@ Alternatively, from `psql`:
 CREATE DATABASE devlens;
 ```
 
-No tables need to be created manually. During local startup, Hibernate updates the schema and creates the `analyses` table from the `Analysis` entity.
+No tables need to be created manually. During local startup, Hibernate updates the schema and creates the analysis and structured-result collection tables from the JPA model.
 
 ## Run the backend
 

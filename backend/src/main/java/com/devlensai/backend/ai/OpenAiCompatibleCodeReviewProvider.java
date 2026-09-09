@@ -1,7 +1,9 @@
 package com.devlensai.backend.ai;
 
 import com.devlensai.backend.dto.CodeReviewResult;
+import com.devlensai.backend.dto.GeneratedTestCaseResult;
 import com.devlensai.backend.entity.ProgrammingLanguage;
+import com.devlensai.backend.entity.TestCaseCategory;
 import com.devlensai.backend.exception.AiProviderApiException;
 import com.devlensai.backend.exception.AiProviderMalformedResponseException;
 import com.devlensai.backend.exception.AiProviderTimeoutException;
@@ -27,14 +29,22 @@ public class OpenAiCompatibleCodeReviewProvider implements AiCodeReviewProvider 
     private static final String PROVIDER_NAME = "openai-compatible";
     private static final Set<String> RESULT_FIELDS = Set.of(
             "summary", "potentialBugs", "timeComplexity", "spaceComplexity",
-            "edgeCases", "suggestions", "improvedCode"
+            "edgeCases", "suggestions", "improvedCode", "generatedTestCases"
+    );
+    private static final Set<String> TEST_CASE_FIELDS = Set.of(
+            "name", "category", "input", "expectedOutput", "explanation", "confidenceOrWarning"
     );
     private static final String SYSTEM_PROMPT = """
             You are a careful code reviewer. Analyze code without executing it. Return only one JSON object,
             with no Markdown fences or additional text. It must contain exactly these fields:
             summary (string), potentialBugs (array of strings), timeComplexity (string),
             spaceComplexity (string), edgeCases (array of strings), suggestions (array of strings),
-            and improvedCode (string). Use empty arrays when no items apply. Do not add test cases.
+            improvedCode (string), and generatedTestCases (array of test-case objects). Each test case must
+            contain name, category, input, expectedOutput, explanation, and confidenceOrWarning. Category must
+            be NORMAL, EDGE, BOUNDARY, INVALID, or STRESS. Never execute the submitted code. Infer behavior
+            only from the source. Do not fabricate an expected output when behavior cannot be determined;
+            leave expectedOutput empty and clearly explain the uncertainty in confidenceOrWarning.
+            Use empty arrays when no review or test-case items apply.
             """;
 
     private final ObjectMapper objectMapper;
@@ -131,7 +141,8 @@ public class OpenAiCompatibleCodeReviewProvider implements AiCodeReviewProvider 
                                 "spaceComplexity", Map.of("type", "string"),
                                 "edgeCases", stringArraySchema(),
                                 "suggestions", stringArraySchema(),
-                                "improvedCode", Map.of("type", "string")
+                                "improvedCode", Map.of("type", "string"),
+                                "generatedTestCases", testCaseArraySchema()
                         )
                 )
         );
@@ -168,7 +179,8 @@ public class OpenAiCompatibleCodeReviewProvider implements AiCodeReviewProvider 
                     requiredText(result, "spaceComplexity"),
                     stringList(result, "edgeCases"),
                     stringList(result, "suggestions"),
-                    requiredText(result, "improvedCode")
+                    requiredText(result, "improvedCode"),
+                    testCases(result, "generatedTestCases")
             );
         } catch (JacksonException exception) {
             throw new AiProviderMalformedResponseException("AI provider returned malformed JSON", exception);
@@ -211,8 +223,76 @@ public class OpenAiCompatibleCodeReviewProvider implements AiCodeReviewProvider 
         return List.copyOf(items);
     }
 
+    private List<GeneratedTestCaseResult> testCases(JsonNode result, String field) {
+        JsonNode value = result.get(field);
+        if (value == null || !value.isArray()) {
+            throw malformed();
+        }
+
+        java.util.ArrayList<GeneratedTestCaseResult> testCases = new java.util.ArrayList<>();
+        for (JsonNode testCase : value) {
+            validateExactFields(testCase, TEST_CASE_FIELDS);
+            TestCaseCategory category;
+            try {
+                category = TestCaseCategory.valueOf(requiredNonBlankText(testCase, "category"));
+            } catch (IllegalArgumentException exception) {
+                throw malformed();
+            }
+            testCases.add(new GeneratedTestCaseResult(
+                    requiredNonBlankText(testCase, "name"),
+                    category,
+                    requiredText(testCase, "input"),
+                    requiredText(testCase, "expectedOutput"),
+                    requiredNonBlankText(testCase, "explanation"),
+                    requiredNonBlankText(testCase, "confidenceOrWarning")
+            ));
+        }
+        return List.copyOf(testCases);
+    }
+
+    private String requiredNonBlankText(JsonNode result, String field) {
+        String value = requiredText(result, field);
+        if (value.isBlank()) {
+            throw malformed();
+        }
+        return value;
+    }
+
+    private void validateExactFields(JsonNode value, Set<String> expectedFields) {
+        if (!value.isObject()) {
+            throw malformed();
+        }
+        Set<String> actualFields = new java.util.HashSet<>();
+        value.properties().forEach(entry -> actualFields.add(entry.getKey()));
+        if (!actualFields.equals(expectedFields)) {
+            throw malformed();
+        }
+    }
+
     private static Map<String, Object> stringArraySchema() {
         return Map.of("type", "array", "items", Map.of("type", "string"));
+    }
+
+    private static Map<String, Object> testCaseArraySchema() {
+        return Map.of(
+                "type", "array",
+                "items", Map.of(
+                        "type", "object",
+                        "additionalProperties", false,
+                        "required", TEST_CASE_FIELDS,
+                        "properties", Map.of(
+                                "name", Map.of("type", "string"),
+                                "category", Map.of(
+                                        "type", "string",
+                                        "enum", List.of("NORMAL", "EDGE", "BOUNDARY", "INVALID", "STRESS")
+                                ),
+                                "input", Map.of("type", "string"),
+                                "expectedOutput", Map.of("type", "string"),
+                                "explanation", Map.of("type", "string"),
+                                "confidenceOrWarning", Map.of("type", "string")
+                        )
+                )
+        );
     }
 
     private static URI chatCompletionsEndpoint(String baseUrl) {
