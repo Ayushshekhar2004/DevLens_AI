@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BackendStatus } from '../components/BackendStatus'
+import { AnalysisForm } from '../components/AnalysisForm'
 import { getBackendHealth } from '../services/healthApi'
 import type { HealthResponse } from '../types/health'
 
@@ -32,10 +33,15 @@ export function HomePage() {
   }, [requestNumber])
 
   return (
-    <main>
-      <div className="eyebrow">Developer intelligence, focused</div>
-      <h1>DevLens <span>AI</span></h1>
-      <p className="intro">AI-powered code review and test generation, built one reliable layer at a time.</p>
+    <main className="dashboard">
+      <header className="dashboard-header">
+        <div>
+          <div className="eyebrow">Developer intelligence, focused</div>
+          <h1>DevLens <span>AI</span></h1>
+          <p className="intro">Submit code for a clear, reliable analysis workflow.</p>
+        </div>
+
+        <div className="health-panel">
 
       {request.state === 'loading' && (
         <section className="status-card" aria-live="polite">
@@ -55,10 +61,14 @@ export function HomePage() {
             <p className="status-label">Backend status</p>
             <h2>Connection failed</h2>
             <p>{request.message}</p>
-            <button type="button" onClick={retry}>Try again</button>
+            <button className="retry-button" type="button" onClick={retry}>Try again</button>
           </div>
         </section>
-      )}
+          )}
+        </div>
+      </header>
+
+      <AnalysisForm />
     </main>
   )
 }
