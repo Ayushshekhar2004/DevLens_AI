@@ -1,6 +1,6 @@
 # DevLens AI
 
-DevLens AI is an incrementally built code-review and test-generation platform. Day 2 contains a Spring Boot health API and a React UI that displays its availability.
+DevLens AI is an incrementally built code-review and test-generation platform. The application currently contains a Spring Boot health API, an Analysis persistence model, and a React UI that displays backend availability.
 
 ## Prerequisites
 
@@ -9,14 +9,38 @@ DevLens AI is an incrementally built code-review and test-generation platform. D
 - Node.js 20.19+ or 22.12+
 - PostgreSQL
 
+## Set up PostgreSQL
+
+Start PostgreSQL. With Homebrew on macOS:
+
+```bash
+brew services start postgresql@18
+```
+
+Create the application database if it does not already exist:
+
+```bash
+createdb devlens
+```
+
+Alternatively, from `psql`:
+
+```sql
+CREATE DATABASE devlens;
+```
+
+No tables need to be created manually. During local startup, Hibernate updates the schema and creates the `analyses` table from the `Analysis` entity.
+
 ## Run the backend
 
-Create a PostgreSQL database named `devlens`, then set the local environment values:
+Set the local environment values, replacing the username and password with your PostgreSQL credentials. Homebrew PostgreSQL commonly uses your macOS username and an empty password for local connections.
 
 ```bash
 cd backend
-export DB_URL="jdbc:postgresql://localhost:5432/devlens"
-export DB_USERNAME="postgres"
+export DB_HOST="localhost"
+export DB_PORT="5432"
+export DB_NAME="devlens"
+export DB_USERNAME="your-postgres-user"
 export DB_PASSWORD="your-local-password"
 export SERVER_PORT="8080"
 export FRONTEND_ORIGIN="http://localhost:5173"
