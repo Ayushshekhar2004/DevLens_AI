@@ -1,15 +1,18 @@
 package com.devlensai.backend.controller;
 
 import com.devlensai.backend.dto.AnalysisResponse;
+import com.devlensai.backend.dto.CodeReviewResult;
 import com.devlensai.backend.dto.CreateAnalysisRequest;
 import com.devlensai.backend.entity.AnalysisStatus;
 import com.devlensai.backend.entity.ProgrammingLanguage;
 import com.devlensai.backend.exception.AnalysisNotFoundException;
+import com.devlensai.backend.exception.AnalysisReviewFailedException;
 import com.devlensai.backend.service.AnalysisService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -50,7 +53,8 @@ class AnalysisControllerTest {
                 .andExpect(header().string("Location", "/api/analyses/1"))
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.language").value("JAVA"))
-                .andExpect(jsonPath("$.status").value("COMPLETED"));
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.result.summary").value("Review summary"));
     }
 
     @Test
@@ -74,6 +78,26 @@ class AnalysisControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(containsString("unsupported")));
+    }
+
+    @Test
+    void returnsClearGatewayTimeoutWhenAiReviewFails() throws Exception {
+        when(analysisService.create(any(CreateAnalysisRequest.class)))
+                .thenThrow(new AnalysisReviewFailedException(
+                        7L,
+                        HttpStatus.GATEWAY_TIMEOUT,
+                        "AI provider request timed out",
+                        new RuntimeException("provider failure")
+                ));
+
+        mockMvc.perform(post("/api/analyses")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"language":"JAVA","sourceCode":"public class Main {}"}
+                                """))
+                .andExpect(status().isGatewayTimeout())
+                .andExpect(jsonPath("$.message")
+                        .value("Analysis 7 was saved as FAILED: AI provider request timed out"));
     }
 
     @Test
@@ -113,7 +137,17 @@ class AnalysisControllerTest {
                 language,
                 "source code",
                 AnalysisStatus.COMPLETED,
-                CREATED_AT
+                CREATED_AT,
+                new CodeReviewResult(
+                        "Review summary",
+                        List.of(),
+                        "O(1)",
+                        "O(1)",
+                        List.of(),
+                        List.of("Keep it readable"),
+                        "source code"
+                ),
+                null
         );
     }
 }

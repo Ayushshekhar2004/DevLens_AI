@@ -98,12 +98,24 @@ npm run dev
 
 Open `http://localhost:5173`, select a language, enter source code, and choose **Analyze Code**. The frontend sends the request to `http://localhost:8080/api/analyses` by default.
 
-## AI provider foundation
+## AI provider configuration
 
-The backend currently registers a clearly labeled mock code-review provider, so local development does not require an API key and no external AI request is made. Leave this value blank:
+Local development defaults safely to the clearly labeled mock provider when no API key is configured:
 
 ```bash
-export AI_API_KEY=""
+export AI_PROVIDER="mock"
 ```
 
-The `CodeReviewService` depends on the `AiCodeReviewProvider` interface rather than a specific vendor. A future external provider can supply that interface and replace the fallback mock without changing controllers or application-level review logic.
+To use an OpenAI-compatible chat-completions API, configure all provider values through environment variables:
+
+```bash
+export AI_PROVIDER="openai-compatible"
+export AI_API_KEY="your-secret-api-key"
+export AI_BASE_URL="https://api.openai.com/v1/"
+export AI_MODEL="gpt-4.1-mini"
+export AI_TIMEOUT_SECONDS="30"
+```
+
+Never commit a real API key. `AI_PROVIDER=auto` selects the real provider when `AI_API_KEY` is present and otherwise uses the mock. The provider asks for strict structured JSON and validates the complete response schema before returning a result.
+
+The `CodeReviewService` depends on `AiCodeReviewProvider`, not a specific vendor. Provider HTTP details, authentication, error translation, and JSON parsing therefore remain outside controllers and application-level review logic.

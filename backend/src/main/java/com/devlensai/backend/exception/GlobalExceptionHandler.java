@@ -20,6 +20,11 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, exception.getMessage(), Map.of());
     }
 
+    @ExceptionHandler(AnalysisReviewFailedException.class)
+    public ResponseEntity<ApiErrorResponse> handleReviewFailure(AnalysisReviewFailedException exception) {
+        return error(exception.getResponseStatus(), exception.getMessage(), Map.of());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleValidation(MethodArgumentNotValidException exception) {
         Map<String, String> fieldErrors = new LinkedHashMap<>();

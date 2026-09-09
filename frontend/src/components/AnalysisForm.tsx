@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { AnalysisSummary } from './AnalysisSummary'
+import { useRef, useState, type FormEvent } from 'react'
+import { AnalysisResults } from './AnalysisResults'
 import { createAnalysis } from '../services/analysisApi'
 import type { AnalysisResponse, ProgrammingLanguage } from '../types/analysis'
 
@@ -20,6 +20,7 @@ export function AnalysisForm() {
   const [language, setLanguage] = useState<ProgrammingLanguage>('JAVA')
   const [sourceCode, setSourceCode] = useState('')
   const [submission, setSubmission] = useState<SubmissionState>({ state: 'idle' })
+  const sourceCodeRef = useRef<HTMLTextAreaElement>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -40,6 +41,13 @@ export function AnalysisForm() {
     }
   }
 
+  function startNewAnalysis() {
+    setLanguage('JAVA')
+    setSourceCode('')
+    setSubmission({ state: 'idle' })
+    requestAnimationFrame(() => sourceCodeRef.current?.focus())
+  }
+
   return (
     <section className="workspace" aria-labelledby="workspace-title">
       <div className="workspace-heading">
@@ -47,7 +55,7 @@ export function AnalysisForm() {
           <p className="section-kicker">New analysis</p>
           <h2 id="workspace-title">Review your code</h2>
         </div>
-        <span className="day-badge">Day 6</span>
+        <span className="day-badge">Day 11</span>
       </div>
 
       <form onSubmit={handleSubmit} noValidate>
@@ -68,6 +76,7 @@ export function AnalysisForm() {
           <span>{sourceCode.length} characters</span>
         </div>
         <textarea
+          ref={sourceCodeRef}
           id="source-code"
           value={sourceCode}
           onChange={(event) => setSourceCode(event.target.value)}
@@ -83,20 +92,36 @@ export function AnalysisForm() {
             {submission.state === 'loading' ? 'Analyzing…' : 'Analyze Code'}
           </button>
 
-          <div className="submission-message" aria-live="polite">
-            {submission.state === 'error' && (
-              <p className="message message--error" role="alert">{submission.message}</p>
-            )}
-            {submission.state === 'success' && (
-              <p className="message message--success">
-                The backend accepted and saved your code.
-              </p>
-            )}
-          </div>
+        </div>
+
+        <div className="submission-status" aria-live="polite">
+          {submission.state === 'loading' && (
+            <div className="progress-panel" role="status">
+              <span className="progress-spinner" aria-hidden="true" />
+              <div>
+                <strong>Reviewing your code</strong>
+                <p>The AI review may take a few moments. Keep this page open.</p>
+              </div>
+            </div>
+          )}
+          {submission.state === 'error' && (
+            <div className="error-panel" role="alert">
+              <span className="error-mark" aria-hidden="true">!</span>
+              <div>
+                <strong>Analysis could not be completed</strong>
+                <p>{submission.message}</p>
+              </div>
+            </div>
+          )}
+          {submission.state === 'success' && (
+            <p className="message message--success">Review completed and saved.</p>
+          )}
         </div>
       </form>
 
-      {submission.state === 'success' && <AnalysisSummary analysis={submission.analysis} />}
+      {submission.state === 'success' && (
+        <AnalysisResults analysis={submission.analysis} onReset={startNewAnalysis} />
+      )}
     </section>
   )
 }

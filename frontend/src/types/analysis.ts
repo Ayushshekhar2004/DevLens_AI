@@ -7,8 +7,20 @@ export interface CreateAnalysisRequest {
 
 export interface AnalysisResponse extends CreateAnalysisRequest {
   id: number
-  status: 'PENDING' | 'COMPLETED'
+  status: 'PENDING' | 'COMPLETED' | 'FAILED'
   createdAt: string
+  result: CodeReviewResult | null
+  failureReason: string | null
+}
+
+export interface CodeReviewResult {
+  summary: string
+  potentialBugs: string[]
+  timeComplexity: string
+  spaceComplexity: string
+  edgeCases: string[]
+  suggestions: string[]
+  improvedCode: string
 }
 
 export interface ApiErrorResponse {

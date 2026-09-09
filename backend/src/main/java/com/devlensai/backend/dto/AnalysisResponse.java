@@ -10,6 +10,8 @@ public record AnalysisResponse(
         ProgrammingLanguage language,
         String sourceCode,
         AnalysisStatus status,
-        Instant createdAt
+        Instant createdAt,
+        CodeReviewResult result,
+        String failureReason
 ) {
 }
