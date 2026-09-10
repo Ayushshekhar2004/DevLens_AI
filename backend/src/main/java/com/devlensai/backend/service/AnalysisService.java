@@ -4,6 +4,7 @@ import com.devlensai.backend.dto.AnalysisResponse;
 import com.devlensai.backend.dto.CodeReviewResult;
 import com.devlensai.backend.dto.CreateAnalysisRequest;
 import com.devlensai.backend.entity.Analysis;
+import com.devlensai.backend.entity.User;
 import com.devlensai.backend.exception.AnalysisNotFoundException;
 import com.devlensai.backend.exception.AnalysisReviewFailedException;
 import com.devlensai.backend.exception.AiProviderApiException;
@@ -29,9 +30,9 @@ public class AnalysisService {
         this.codeReviewService = codeReviewService;
     }
 
-    public AnalysisResponse create(CreateAnalysisRequest request) {
+    public AnalysisResponse create(User user, CreateAnalysisRequest request) {
         Analysis analysis = analysisRepository.save(
-                new Analysis(request.language(), request.sourceCode())
+                new Analysis(user, request.language(), request.sourceCode())
         );
 
         CodeReviewResult result;
@@ -58,15 +59,15 @@ public class AnalysisService {
     }
 
     @Transactional(readOnly = true)
-    public AnalysisResponse findById(Long id) {
-        return analysisRepository.findById(id)
+    public AnalysisResponse findById(User user, Long id) {
+        return analysisRepository.findByIdAndUserId(id, user.getId())
                 .map(this::toResponse)
                 .orElseThrow(() -> new AnalysisNotFoundException(id));
     }
 
     @Transactional(readOnly = true)
-    public List<AnalysisResponse> findAllNewestFirst() {
-        return analysisRepository.findAllByOrderByCreatedAtDesc().stream()
+    public List<AnalysisResponse> findAllNewestFirst(User user) {
+        return analysisRepository.findAllByUserIdOrderByCreatedAtDesc(user.getId()).stream()
                 .map(this::toResponse)
                 .toList();
     }

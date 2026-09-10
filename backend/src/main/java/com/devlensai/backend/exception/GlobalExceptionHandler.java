@@ -25,6 +25,16 @@ public class GlobalExceptionHandler {
         return error(exception.getResponseStatus(), exception.getMessage(), Map.of());
     }
 
+    @ExceptionHandler(EmailAlreadyRegisteredException.class)
+    public ResponseEntity<ApiErrorResponse> handleDuplicateEmail(EmailAlreadyRegisteredException exception) {
+        return error(HttpStatus.CONFLICT, exception.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidCredentials(InvalidCredentialsException exception) {
+        return error(HttpStatus.UNAUTHORIZED, exception.getMessage(), Map.of());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleValidation(MethodArgumentNotValidException exception) {
         Map<String, String> fieldErrors = new LinkedHashMap<>();
@@ -38,7 +48,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleUnreadableRequest() {
         return error(
                 HttpStatus.BAD_REQUEST,
-                "Request body is malformed or language is unsupported. Supported languages: JAVA, PYTHON, JAVASCRIPT, CPP",
+                "Request body is malformed or contains an unsupported value",
                 Map.of()
         );
     }

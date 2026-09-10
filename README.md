@@ -13,8 +13,9 @@ DevLens AI is an AI-assisted code-review and test-case-generation MVP. It accept
 - Display structured review sections and generated test cases without exposing raw JSON.
 - Copy improved code to the clipboard and reset the editor for a new analysis.
 - Keep failed AI analyses stored with a safe failure reason.
+- Register users with BCrypt-hashed passwords and issue signed JWTs after successful login.
 
-The MVP does not include authentication, a frontend history screen, security review, or execution of submitted code.
+Analysis endpoints require JWT authentication and only return the signed-in user's records. The MVP does not yet include a frontend authentication flow, a frontend history screen, a broader security review, or execution of submitted code.
 
 ## Prerequisites
 
@@ -58,6 +59,8 @@ export DB_USERNAME="your-postgres-user"
 export DB_PASSWORD="your-local-password"
 export SERVER_PORT="8080"
 export FRONTEND_ORIGIN="http://localhost:5173"
+export JWT_SECRET="replace-with-a-random-secret-at-least-32-bytes-long"
+export JWT_EXPIRATION_MINUTES="60"
 mvn spring-boot:run
 ```
 
@@ -68,6 +71,49 @@ curl http://localhost:8080/api/health
 ```
 
 Run backend tests with `mvn test` from `backend/`.
+
+## Authentication API
+
+Register a user:
+
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Ada Lovelace","email":"ada@example.com","password":"replace-with-a-strong-password"}'
+```
+
+Registration returns public user fields only. Passwords are hashed with BCrypt before persistence; plaintext passwords and password hashes are never returned.
+
+Log in:
+
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ada@example.com","password":"replace-with-a-strong-password"}'
+```
+
+Successful login returns a signed token, the `Bearer` token type, expiration time, and public user details. Keep the returned token private and send it in the `Authorization` header for every analysis request.
+
+Create an analysis as the logged-in user:
+
+```bash
+curl -X POST http://localhost:8080/api/analyses \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"language":"JAVA","sourceCode":"public class Main {}"}'
+```
+
+Read one of your analyses or list all of them, newest first:
+
+```bash
+curl http://localhost:8080/api/analyses/1 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+curl http://localhost:8080/api/analyses \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+Analysis records are owned by the user who creates them. A missing, expired, or invalid token returns `401`; requesting another user's analysis returns `404` so the API does not reveal whether that record exists.
 
 ## Run the frontend
 
@@ -98,6 +144,8 @@ export DB_NAME="devlens"
 export DB_USERNAME="your-postgres-user"
 export DB_PASSWORD="your-local-password"
 export FRONTEND_ORIGIN="http://localhost:5173"
+export JWT_SECRET="replace-with-a-random-secret-at-least-32-bytes-long"
+export JWT_EXPIRATION_MINUTES="60"
 mvn spring-boot:run
 ```
 
@@ -110,7 +158,7 @@ npm install           # only needed after dependency changes
 npm run dev
 ```
 
-Open `http://localhost:5173`, select a language, enter source code, and choose **Analyze Code**. The frontend sends the request to `http://localhost:8080/api/analyses` by default.
+Open `http://localhost:5173` to view the existing UI. Day 15 intentionally does not add frontend authentication screens, so protected analysis submissions must currently be demonstrated through curl or Postman. The UI will receive `401` until a later frontend-authentication day wires a JWT into its requests.
 
 ## AI provider configuration
 

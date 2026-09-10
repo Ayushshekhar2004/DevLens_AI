@@ -10,9 +10,12 @@ import com.devlensai.backend.entity.TestCaseCategory;
 import com.devlensai.backend.exception.AnalysisNotFoundException;
 import com.devlensai.backend.exception.AnalysisReviewFailedException;
 import com.devlensai.backend.service.AnalysisService;
+import com.devlensai.backend.service.JwtService;
+import com.devlensai.backend.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -31,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AnalysisController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class AnalysisControllerTest {
 
     private static final Instant CREATED_AT = Instant.parse("2026-09-09T12:00:00Z");
@@ -41,9 +45,15 @@ class AnalysisControllerTest {
     @MockitoBean
     private AnalysisService analysisService;
 
+    @MockitoBean
+    private JwtService jwtService;
+
+    @MockitoBean
+    private UserRepository userRepository;
+
     @Test
     void createsAnalysis() throws Exception {
-        when(analysisService.create(any(CreateAnalysisRequest.class)))
+        when(analysisService.create(any(), any(CreateAnalysisRequest.class)))
                 .thenReturn(response(1L, ProgrammingLanguage.JAVA));
 
         mockMvc.perform(post("/api/analyses")
@@ -85,7 +95,7 @@ class AnalysisControllerTest {
 
     @Test
     void returnsClearGatewayTimeoutWhenAiReviewFails() throws Exception {
-        when(analysisService.create(any(CreateAnalysisRequest.class)))
+        when(analysisService.create(any(), any(CreateAnalysisRequest.class)))
                 .thenThrow(new AnalysisReviewFailedException(
                         7L,
                         HttpStatus.GATEWAY_TIMEOUT,
@@ -105,7 +115,8 @@ class AnalysisControllerTest {
 
     @Test
     void returnsAnalysisById() throws Exception {
-        when(analysisService.findById(1L)).thenReturn(response(1L, ProgrammingLanguage.JAVA));
+        when(analysisService.findById(any(), org.mockito.ArgumentMatchers.eq(1L)))
+                .thenReturn(response(1L, ProgrammingLanguage.JAVA));
 
         mockMvc.perform(get("/api/analyses/1"))
                 .andExpect(status().isOk())
@@ -114,7 +125,8 @@ class AnalysisControllerTest {
 
     @Test
     void returnsNotFoundForMissingAnalysis() throws Exception {
-        when(analysisService.findById(99L)).thenThrow(new AnalysisNotFoundException(99L));
+        when(analysisService.findById(any(), org.mockito.ArgumentMatchers.eq(99L)))
+                .thenThrow(new AnalysisNotFoundException(99L));
 
         mockMvc.perform(get("/api/analyses/99"))
                 .andExpect(status().isNotFound())
@@ -123,7 +135,7 @@ class AnalysisControllerTest {
 
     @Test
     void listsAnalyses() throws Exception {
-        when(analysisService.findAllNewestFirst()).thenReturn(List.of(
+        when(analysisService.findAllNewestFirst(any())).thenReturn(List.of(
                 response(2L, ProgrammingLanguage.PYTHON),
                 response(1L, ProgrammingLanguage.JAVA)
         ));

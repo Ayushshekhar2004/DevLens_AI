@@ -12,6 +12,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
@@ -27,6 +28,10 @@ public class Analysis {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "programming_language", nullable = false, length = 32)
@@ -83,7 +88,8 @@ public class Analysis {
     protected Analysis() {
     }
 
-    public Analysis(ProgrammingLanguage programmingLanguage, String sourceCode) {
+    public Analysis(User user, ProgrammingLanguage programmingLanguage, String sourceCode) {
+        this.user = user;
         this.programmingLanguage = programmingLanguage;
         this.sourceCode = sourceCode;
         this.status = AnalysisStatus.PENDING;
@@ -125,6 +131,10 @@ public class Analysis {
 
     public Long getId() {
         return id;
+    }
+
+    public User getUser() {
+        return user;
     }
 
     public ProgrammingLanguage getProgrammingLanguage() {

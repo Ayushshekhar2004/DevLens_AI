@@ -2,9 +2,11 @@ package com.devlensai.backend.controller;
 
 import com.devlensai.backend.dto.AnalysisResponse;
 import com.devlensai.backend.dto.CreateAnalysisRequest;
+import com.devlensai.backend.entity.User;
 import com.devlensai.backend.service.AnalysisService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,18 +28,21 @@ public class AnalysisController {
     }
 
     @PostMapping
-    public ResponseEntity<AnalysisResponse> create(@Valid @RequestBody CreateAnalysisRequest request) {
-        AnalysisResponse response = analysisService.create(request);
+    public ResponseEntity<AnalysisResponse> create(
+            @AuthenticationPrincipal User user,
+            @Valid @RequestBody CreateAnalysisRequest request
+    ) {
+        AnalysisResponse response = analysisService.create(user, request);
         return ResponseEntity.created(URI.create("/api/analyses/" + response.id())).body(response);
     }
 
     @GetMapping("/{id}")
-    public AnalysisResponse findById(@PathVariable Long id) {
-        return analysisService.findById(id);
+    public AnalysisResponse findById(@AuthenticationPrincipal User user, @PathVariable Long id) {
+        return analysisService.findById(user, id);
     }
 
     @GetMapping
-    public List<AnalysisResponse> findAll() {
-        return analysisService.findAllNewestFirst();
+    public List<AnalysisResponse> findAll(@AuthenticationPrincipal User user) {
+        return analysisService.findAllNewestFirst(user);
     }
 }
