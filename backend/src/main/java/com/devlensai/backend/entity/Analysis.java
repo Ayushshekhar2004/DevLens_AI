@@ -161,6 +161,10 @@ public class Analysis {
         return sourceCode;
     }
 
+    public String getSummary() {
+        return summary;
+    }
+
     public AnalysisStatus getStatus() {
         return status;
     }

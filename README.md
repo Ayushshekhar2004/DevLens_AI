@@ -139,6 +139,15 @@ curl -X DELETE http://localhost:8080/api/analyses/1 \
 
 A successful deletion returns `204 No Content`. Missing records and records owned by another user both return `404`.
 
+Authenticated developer analytics are available for the current user:
+
+```bash
+curl http://localhost:8080/api/analytics/overview \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+The overview contains total analyses, counts by programming language, the five most recent analysis summaries, the total number of persisted generated test cases, and security findings grouped by their stored severity. All aggregates are owner-scoped database queries. Free-text bug descriptions and finding titles are not grouped into invented categories.
+
 ## Run the frontend
 
 In a second terminal:

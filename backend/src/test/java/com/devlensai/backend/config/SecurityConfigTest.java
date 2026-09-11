@@ -46,6 +46,12 @@ class SecurityConfigTest {
     }
 
     @Test
+    void rejectsAnalyticsRequestWithoutToken() throws Exception {
+        mockMvc.perform(get("/api/analytics/overview"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void rejectsAnalysisRequestWithInvalidToken() throws Exception {
         when(jwtService.extractSubject("invalid-token"))
                 .thenThrow(new IllegalArgumentException("invalid token"));
