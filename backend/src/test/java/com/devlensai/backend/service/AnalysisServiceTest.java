@@ -4,19 +4,25 @@ import com.devlensai.backend.dto.AnalysisResponse;
 import com.devlensai.backend.dto.CodeReviewResult;
 import com.devlensai.backend.dto.CreateAnalysisRequest;
 import com.devlensai.backend.dto.GeneratedTestCaseResult;
+import com.devlensai.backend.dto.SecurityFindingResult;
 import com.devlensai.backend.entity.Analysis;
 import com.devlensai.backend.entity.AnalysisStatus;
 import com.devlensai.backend.entity.ProgrammingLanguage;
 import com.devlensai.backend.entity.TestCaseCategory;
 import com.devlensai.backend.entity.User;
+import com.devlensai.backend.entity.SecuritySeverity;
 import com.devlensai.backend.exception.AiProviderMalformedResponseException;
 import com.devlensai.backend.exception.AiProviderTimeoutException;
 import com.devlensai.backend.exception.AnalysisReviewFailedException;
 import com.devlensai.backend.exception.AnalysisNotFoundException;
+import com.devlensai.backend.exception.InvalidHistoryQueryException;
 import com.devlensai.backend.repository.AnalysisRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.net.http.HttpTimeoutException;
 import java.util.ArrayList;
@@ -30,6 +36,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 class AnalysisServiceTest {
 
@@ -116,6 +123,65 @@ class AnalysisServiceTest {
         verify(repository).findByIdAndUserId(7L, 42L);
     }
 
+    @Test
+    void paginatesHistoryWithRequestedSort() {
+        User authenticatedUser = mock(User.class);
+        when(authenticatedUser.getId()).thenReturn(42L);
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenAnswer(invocation -> Page.empty(invocation.getArgument(1)));
+
+        var response = analysisService.findHistory(
+                authenticatedUser, 2, 15, "Main", ProgrammingLanguage.JAVA, "oldest"
+        );
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(repository).findAll(any(Specification.class), pageableCaptor.capture());
+        assertThat(pageableCaptor.getValue().getPageNumber()).isEqualTo(2);
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(15);
+        assertThat(pageableCaptor.getValue().getSort().getOrderFor("createdAt").isAscending()).isTrue();
+        assertThat(response.content()).isEmpty();
+        assertThat(response.page()).isEqualTo(2);
+    }
+
+    @Test
+    void rejectsInvalidHistoryPaginationBeforeQueryingDatabase() {
+        assertThatThrownBy(() -> analysisService.findHistory(user, -1, 20, null, null, "newest"))
+                .isInstanceOf(InvalidHistoryQueryException.class)
+                .hasMessage("page must be zero or greater");
+        assertThatThrownBy(() -> analysisService.findHistory(user, 0, 101, null, null, "newest"))
+                .isInstanceOf(InvalidHistoryQueryException.class)
+                .hasMessage("size must be between 1 and 100");
+        assertThatThrownBy(() -> analysisService.findHistory(user, 0, 20, null, null, "sideways"))
+                .isInstanceOf(InvalidHistoryQueryException.class)
+                .hasMessage("sort must be either newest or oldest");
+
+        verify(repository, never()).findAll(any(Specification.class), any(Pageable.class));
+    }
+
+    @Test
+    void deletesOnlyAnalysisOwnedByAuthenticatedUser() {
+        User authenticatedUser = mock(User.class);
+        Analysis ownedAnalysis = mock(Analysis.class);
+        when(authenticatedUser.getId()).thenReturn(42L);
+        when(repository.findByIdAndUserId(7L, 42L)).thenReturn(Optional.of(ownedAnalysis));
+
+        analysisService.delete(authenticatedUser, 7L);
+
+        verify(repository).delete(ownedAnalysis);
+    }
+
+    @Test
+    void hidesUnownedAnalysisDuringDelete() {
+        User authenticatedUser = mock(User.class);
+        when(authenticatedUser.getId()).thenReturn(42L);
+        when(repository.findByIdAndUserId(7L, 42L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> analysisService.delete(authenticatedUser, 7L))
+                .isInstanceOf(AnalysisNotFoundException.class);
+
+        verify(repository, never()).delete(any(Analysis.class));
+    }
+
     private CreateAnalysisRequest request() {
         return new CreateAnalysisRequest(ProgrammingLanguage.JAVA, "class Main {}");
     }
@@ -136,6 +202,14 @@ class AnalysisServiceTest {
                         "A Main instance",
                         "Covers normal construction",
                         "High confidence"
+                )),
+                List.of(new SecurityFindingResult(
+                        "Unsafe input flow",
+                        SecuritySeverity.HIGH,
+                        "Untrusted input reaches a sensitive operation.",
+                        "Main.java:12",
+                        "Validate and constrain the input.",
+                        "Medium confidence because surrounding code is unavailable."
                 ))
         );
     }

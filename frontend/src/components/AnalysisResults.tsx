@@ -6,13 +6,15 @@ import { GeneratedTestCases } from './GeneratedTestCases'
 import { ImprovedCode } from './ImprovedCode'
 import { PotentialBugs } from './PotentialBugs'
 import { Suggestions } from './Suggestions'
+import { SecurityFindings } from './SecurityFindings'
 
 interface AnalysisResultsProps {
   analysis: AnalysisResponse
   onReset: () => void
+  actionLabel?: string
 }
 
-export function AnalysisResults({ analysis, onReset }: AnalysisResultsProps) {
+export function AnalysisResults({ analysis, onReset, actionLabel = 'New analysis' }: AnalysisResultsProps) {
   return (
     <section className="analysis-results" aria-labelledby="analysis-results-title">
       <header className="results-heading">
@@ -28,7 +30,7 @@ export function AnalysisResults({ analysis, onReset }: AnalysisResultsProps) {
             {analysis.status}
           </span>
           <button className="secondary-button" type="button" onClick={onReset}>
-            New analysis
+            {actionLabel}
           </button>
         </div>
       </header>
@@ -43,6 +45,7 @@ export function AnalysisResults({ analysis, onReset }: AnalysisResultsProps) {
           <PotentialBugs bugs={analysis.result.potentialBugs} />
           <EdgeCases edgeCases={analysis.result.edgeCases} />
           <Suggestions suggestions={analysis.result.suggestions} />
+          <SecurityFindings findings={analysis.result.securityFindings ?? []} />
           <GeneratedTestCases testCases={analysis.result.generatedTestCases} />
           <ImprovedCode code={analysis.result.improvedCode} />
         </div>

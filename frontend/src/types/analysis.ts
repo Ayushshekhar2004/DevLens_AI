@@ -22,6 +22,18 @@ export interface CodeReviewResult {
   suggestions: string[]
   improvedCode: string
   generatedTestCases: GeneratedTestCaseResult[]
+  securityFindings: SecurityFindingResult[]
+}
+
+export type SecuritySeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+
+export interface SecurityFindingResult {
+  title: string
+  severity: SecuritySeverity
+  explanation: string
+  vulnerableLocation: string
+  suggestedRemediation: string
+  confidenceOrUncertainty: string
 }
 
 export type TestCaseCategory = 'NORMAL' | 'EDGE' | 'BOUNDARY' | 'INVALID' | 'STRESS'
@@ -38,4 +50,24 @@ export interface GeneratedTestCaseResult {
 export interface ApiErrorResponse {
   message?: string
   fieldErrors?: Record<string, string>
+}
+
+export interface AnalysisHistoryResponse {
+  content: AnalysisResponse[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  first: boolean
+  last: boolean
+}
+
+export type HistorySort = 'newest' | 'oldest'
+
+export interface AnalysisHistoryQuery {
+  page: number
+  size: number
+  search?: string
+  language?: ProgrammingLanguage
+  sort: HistorySort
 }

@@ -2,8 +2,10 @@ package com.devlensai.backend.ai;
 
 import com.devlensai.backend.dto.CodeReviewResult;
 import com.devlensai.backend.dto.GeneratedTestCaseResult;
+import com.devlensai.backend.dto.SecurityFindingResult;
 import com.devlensai.backend.entity.ProgrammingLanguage;
 import com.devlensai.backend.entity.TestCaseCategory;
+import com.devlensai.backend.entity.SecuritySeverity;
 import com.devlensai.backend.exception.AiProviderApiException;
 import com.devlensai.backend.exception.AiProviderMalformedResponseException;
 import com.devlensai.backend.exception.AiProviderTimeoutException;
@@ -29,22 +31,32 @@ public class OpenAiCompatibleCodeReviewProvider implements AiCodeReviewProvider 
     private static final String PROVIDER_NAME = "openai-compatible";
     private static final Set<String> RESULT_FIELDS = Set.of(
             "summary", "potentialBugs", "timeComplexity", "spaceComplexity",
-            "edgeCases", "suggestions", "improvedCode", "generatedTestCases"
+            "edgeCases", "suggestions", "improvedCode", "generatedTestCases", "securityFindings"
     );
     private static final Set<String> TEST_CASE_FIELDS = Set.of(
             "name", "category", "input", "expectedOutput", "explanation", "confidenceOrWarning"
+    );
+    private static final Set<String> SECURITY_FINDING_FIELDS = Set.of(
+            "title", "severity", "explanation", "vulnerableLocation",
+            "suggestedRemediation", "confidenceOrUncertainty"
     );
     private static final String SYSTEM_PROMPT = """
             You are a careful code reviewer. Analyze code without executing it. Return only one JSON object,
             with no Markdown fences or additional text. It must contain exactly these fields:
             summary (string), potentialBugs (array of strings), timeComplexity (string),
             spaceComplexity (string), edgeCases (array of strings), suggestions (array of strings),
-            improvedCode (string), and generatedTestCases (array of test-case objects). Each test case must
+            improvedCode (string), generatedTestCases (array of test-case objects), and securityFindings
+            (array of security-finding objects). Each test case must
             contain name, category, input, expectedOutput, explanation, and confidenceOrWarning. Category must
             be NORMAL, EDGE, BOUNDARY, INVALID, or STRESS. Never execute the submitted code. Infer behavior
             only from the source. Do not fabricate an expected output when behavior cannot be determined;
             leave expectedOutput empty and clearly explain the uncertainty in confidenceOrWarning.
-            Use empty arrays when no review or test-case items apply.
+            Each security finding must contain title, severity, explanation, vulnerableLocation,
+            suggestedRemediation, and confidenceOrUncertainty. Severity must be LOW, MEDIUM, HIGH, or
+            CRITICAL. Security review is advisory: report only issues supported by evidence in the submitted
+            source, distinguish possible risk from confirmed vulnerability, and explicitly describe weak
+            evidence or missing context in confidenceOrUncertainty. Leave vulnerableLocation empty when it
+            cannot be identified. Do not perform malware analysis. Use empty arrays when no items apply.
             """;
 
     private final ObjectMapper objectMapper;
@@ -142,7 +154,8 @@ public class OpenAiCompatibleCodeReviewProvider implements AiCodeReviewProvider 
                                 "edgeCases", stringArraySchema(),
                                 "suggestions", stringArraySchema(),
                                 "improvedCode", Map.of("type", "string"),
-                                "generatedTestCases", testCaseArraySchema()
+                                "generatedTestCases", testCaseArraySchema(),
+                                "securityFindings", securityFindingArraySchema()
                         )
                 )
         );
@@ -180,7 +193,8 @@ public class OpenAiCompatibleCodeReviewProvider implements AiCodeReviewProvider 
                     stringList(result, "edgeCases"),
                     stringList(result, "suggestions"),
                     requiredText(result, "improvedCode"),
-                    testCases(result, "generatedTestCases")
+                    testCases(result, "generatedTestCases"),
+                    securityFindings(result, "securityFindings")
             );
         } catch (JacksonException exception) {
             throw new AiProviderMalformedResponseException("AI provider returned malformed JSON", exception);
@@ -250,6 +264,33 @@ public class OpenAiCompatibleCodeReviewProvider implements AiCodeReviewProvider 
         return List.copyOf(testCases);
     }
 
+    private List<SecurityFindingResult> securityFindings(JsonNode result, String field) {
+        JsonNode value = result.get(field);
+        if (value == null || !value.isArray()) {
+            throw malformed();
+        }
+
+        java.util.ArrayList<SecurityFindingResult> findings = new java.util.ArrayList<>();
+        for (JsonNode finding : value) {
+            validateExactFields(finding, SECURITY_FINDING_FIELDS);
+            SecuritySeverity severity;
+            try {
+                severity = SecuritySeverity.valueOf(requiredNonBlankText(finding, "severity"));
+            } catch (IllegalArgumentException exception) {
+                throw malformed();
+            }
+            findings.add(new SecurityFindingResult(
+                    requiredNonBlankText(finding, "title"),
+                    severity,
+                    requiredNonBlankText(finding, "explanation"),
+                    requiredText(finding, "vulnerableLocation"),
+                    requiredNonBlankText(finding, "suggestedRemediation"),
+                    requiredNonBlankText(finding, "confidenceOrUncertainty")
+            ));
+        }
+        return List.copyOf(findings);
+    }
+
     private String requiredNonBlankText(JsonNode result, String field) {
         String value = requiredText(result, field);
         if (value.isBlank()) {
@@ -290,6 +331,28 @@ public class OpenAiCompatibleCodeReviewProvider implements AiCodeReviewProvider 
                                 "expectedOutput", Map.of("type", "string"),
                                 "explanation", Map.of("type", "string"),
                                 "confidenceOrWarning", Map.of("type", "string")
+                        )
+                )
+        );
+    }
+
+    private static Map<String, Object> securityFindingArraySchema() {
+        return Map.of(
+                "type", "array",
+                "items", Map.of(
+                        "type", "object",
+                        "additionalProperties", false,
+                        "required", SECURITY_FINDING_FIELDS,
+                        "properties", Map.of(
+                                "title", Map.of("type", "string"),
+                                "severity", Map.of(
+                                        "type", "string",
+                                        "enum", List.of("LOW", "MEDIUM", "HIGH", "CRITICAL")
+                                ),
+                                "explanation", Map.of("type", "string"),
+                                "vulnerableLocation", Map.of("type", "string"),
+                                "suggestedRemediation", Map.of("type", "string"),
+                                "confidenceOrUncertainty", Map.of("type", "string")
                         )
                 )
         );

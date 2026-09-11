@@ -9,13 +9,16 @@ DevLens AI is an AI-assisted code-review and test-case-generation MVP. It accept
 - Use a clearly labeled mock provider locally or an OpenAI-compatible provider configured with environment variables.
 - Return and persist a structured summary, potential bugs, time and space complexity, edge cases, suggestions, and improved code.
 - Generate and persist categorized test-case suggestions with input, expected output, explanation, and confidence or uncertainty warnings.
+- Generate and persist advisory security findings with severity, evidence, remediation, and confidence or uncertainty notes.
 - Reload stored analyses through `GET /api/analyses/{id}` and list analyses newest first through `GET /api/analyses`.
 - Display structured review sections and generated test cases without exposing raw JSON.
+- Display advisory security findings with restrained severity labels, remediation guidance, and uncertainty notes.
 - Copy improved code to the clipboard and reset the editor for a new analysis.
 - Keep failed AI analyses stored with a safe failure reason.
 - Register users with BCrypt-hashed passwords and issue signed JWTs after successful login.
+- Register and log in from the frontend, keep authentication for the current browser tab, and log out explicitly.
 
-Analysis endpoints require JWT authentication and only return the signed-in user's records. The MVP does not yet include a frontend authentication flow, a frontend history screen, a broader security review, or execution of submitted code.
+Analysis endpoints require JWT authentication and only return the signed-in user's records. The MVP does not yet include a frontend history screen, a broader security review, or execution of submitted code.
 
 ## Prerequisites
 
@@ -115,6 +118,27 @@ curl http://localhost:8080/api/analyses \
 
 Analysis records are owned by the user who creates them. A missing, expired, or invalid token returns `401`; requesting another user's analysis returns `404` so the API does not reveal whether that record exists.
 
+Paginated history is available at `GET /api/analyses/history`. Page numbers start at zero, the default page size is 20, and the maximum page size is 100:
+
+```bash
+curl "http://localhost:8080/api/analyses/history?page=0&size=20&sort=newest" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+curl "http://localhost:8080/api/analyses/history?search=Main&language=JAVA&sort=oldest" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+The optional `search` parameter searches source code and stored result summaries. `language` accepts `JAVA`, `PYTHON`, `JAVASCRIPT`, or `CPP`. `sort` accepts `newest` or `oldest`. Filtering, sorting, pagination, and ownership constraints are applied by the database query.
+
+Delete one of your analyses:
+
+```bash
+curl -X DELETE http://localhost:8080/api/analyses/1 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+A successful deletion returns `204 No Content`. Missing records and records owned by another user both return `404`.
+
 ## Run the frontend
 
 In a second terminal:
@@ -158,7 +182,7 @@ npm install           # only needed after dependency changes
 npm run dev
 ```
 
-Open `http://localhost:5173` to view the existing UI. Day 15 intentionally does not add frontend authentication screens, so protected analysis submissions must currently be demonstrated through curl or Postman. The UI will receive `401` until a later frontend-authentication day wires a JWT into its requests.
+Open `http://localhost:5173`, create an account or log in, and submit code from the protected dashboard. The frontend stores the JWT and public user details in `sessionStorage`, sends the token as `Authorization: Bearer <token>` for analysis requests, and clears the session on logout, token expiry, or a backend `401` response. Passwords are never stored.
 
 ## AI provider configuration
 
@@ -179,5 +203,7 @@ export AI_TIMEOUT_SECONDS="30"
 ```
 
 Never commit a real API key. `AI_PROVIDER=auto` selects the real provider when `AI_API_KEY` is present and otherwise uses the mock. The provider asks for strict structured JSON and validates the complete response schema before returning a result.
+
+Security findings are advisory rather than proof of a vulnerability. The provider reviews only the submitted source text without executing it, performing malware analysis, inspecting dependencies, or observing runtime configuration. Findings can therefore contain false positives or miss issues when relevant context is absent. Validate important findings through human review and appropriate security tooling before acting on them.
 
 The `CodeReviewService` depends on `AiCodeReviewProvider`, not a specific vendor. Provider HTTP details, authentication, error translation, and JSON parsing therefore remain outside controllers and application-level review logic.

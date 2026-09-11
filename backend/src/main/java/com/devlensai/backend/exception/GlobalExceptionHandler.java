@@ -35,6 +35,11 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.UNAUTHORIZED, exception.getMessage(), Map.of());
     }
 
+    @ExceptionHandler(InvalidHistoryQueryException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidHistoryQuery(InvalidHistoryQueryException exception) {
+        return error(HttpStatus.BAD_REQUEST, exception.getMessage(), Map.of());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleValidation(MethodArgumentNotValidException exception) {
         Map<String, String> fieldErrors = new LinkedHashMap<>();

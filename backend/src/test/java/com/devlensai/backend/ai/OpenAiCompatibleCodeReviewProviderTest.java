@@ -40,7 +40,11 @@ class OpenAiCompatibleCodeReviewProviderTest {
                 "suggestions":["Add documentation"],"improvedCode":"public class Main {}",
                 "generatedTestCases":[{"name":"Basic construction","category":"NORMAL",
                 "input":"Create a Main instance","expectedOutput":"Instance is created",
-                "explanation":"Covers the implicit constructor","confidenceOrWarning":"High confidence"}]}
+                "explanation":"Covers the implicit constructor","confidenceOrWarning":"High confidence"}],
+                "securityFindings":[{"title":"Unvalidated input","severity":"MEDIUM",
+                "explanation":"Input reaches a sensitive operation without validation.",
+                "vulnerableLocation":"Main.java:12","suggestedRemediation":"Validate input before use.",
+                "confidenceOrUncertainty":"Medium confidence; caller constraints are unavailable."}]}
                 """;
         String providerResponse = objectMapper.writeValueAsString(java.util.Map.of(
                 "choices", List.of(java.util.Map.of(
@@ -54,6 +58,8 @@ class OpenAiCompatibleCodeReviewProviderTest {
                     "json_schema",
                     "additionalProperties",
                     "generatedTestCases",
+                    "securityFindings",
+                    "Security review is advisory",
                     "Do not fabricate an expected output",
                     "JAVA",
                     "public class Main {}"
@@ -71,6 +77,12 @@ class OpenAiCompatibleCodeReviewProviderTest {
             assertThat(testCase.name()).isEqualTo("Basic construction");
             assertThat(testCase.category().name()).isEqualTo("NORMAL");
             assertThat(testCase.confidenceOrWarning()).isEqualTo("High confidence");
+        });
+        assertThat(result.securityFindings()).singleElement().satisfies(finding -> {
+            assertThat(finding.title()).isEqualTo("Unvalidated input");
+            assertThat(finding.severity().name()).isEqualTo("MEDIUM");
+            assertThat(finding.vulnerableLocation()).isEqualTo("Main.java:12");
+            assertThat(finding.confidenceOrUncertainty()).contains("Medium confidence");
         });
     }
 
@@ -94,7 +106,29 @@ class OpenAiCompatibleCodeReviewProviderTest {
                 {"summary":"Review","potentialBugs":[],"timeComplexity":"Unknown",
                 "spaceComplexity":"Unknown","edgeCases":[],"suggestions":[],"improvedCode":"code",
                 "generatedTestCases":[{"name":"Example","category":"SECURITY","input":"",
-                "expectedOutput":"","explanation":"Example","confidenceOrWarning":"Uncertain"}]}
+                "expectedOutput":"","explanation":"Example","confidenceOrWarning":"Uncertain"}],
+                "securityFindings":[]}
+                """;
+        String response = objectMapper.writeValueAsString(java.util.Map.of(
+                "choices", List.of(java.util.Map.of(
+                        "message", java.util.Map.of("content", resultJson)
+                ))
+        ));
+        HttpServer server = server(exchange -> respond(exchange, 200, response));
+
+        assertThatThrownBy(() -> provider(server, Duration.ofSeconds(2))
+                .review(ProgrammingLanguage.JAVA, "code"))
+                .isInstanceOf(AiProviderMalformedResponseException.class);
+    }
+
+    @Test
+    void rejectsUnsupportedSecuritySeverity() throws Exception {
+        String resultJson = """
+                {"summary":"Review","potentialBugs":[],"timeComplexity":"Unknown",
+                "spaceComplexity":"Unknown","edgeCases":[],"suggestions":[],"improvedCode":"code",
+                "generatedTestCases":[],"securityFindings":[{"title":"Finding","severity":"URGENT",
+                "explanation":"Possible issue","vulnerableLocation":"","suggestedRemediation":"Review it",
+                "confidenceOrUncertainty":"Low confidence"}]}
                 """;
         String response = objectMapper.writeValueAsString(java.util.Map.of(
                 "choices", List.of(java.util.Map.of(

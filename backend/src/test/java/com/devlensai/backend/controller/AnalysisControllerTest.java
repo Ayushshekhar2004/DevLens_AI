@@ -1,12 +1,15 @@
 package com.devlensai.backend.controller;
 
 import com.devlensai.backend.dto.AnalysisResponse;
+import com.devlensai.backend.dto.AnalysisHistoryResponse;
 import com.devlensai.backend.dto.CodeReviewResult;
 import com.devlensai.backend.dto.CreateAnalysisRequest;
 import com.devlensai.backend.dto.GeneratedTestCaseResult;
+import com.devlensai.backend.dto.SecurityFindingResult;
 import com.devlensai.backend.entity.AnalysisStatus;
 import com.devlensai.backend.entity.ProgrammingLanguage;
 import com.devlensai.backend.entity.TestCaseCategory;
+import com.devlensai.backend.entity.SecuritySeverity;
 import com.devlensai.backend.exception.AnalysisNotFoundException;
 import com.devlensai.backend.exception.AnalysisReviewFailedException;
 import com.devlensai.backend.service.AnalysisService;
@@ -27,6 +30,9 @@ import java.util.List;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -67,7 +73,8 @@ class AnalysisControllerTest {
                 .andExpect(jsonPath("$.language").value("JAVA"))
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.result.summary").value("Review summary"))
-                .andExpect(jsonPath("$.result.generatedTestCases[0].category").value("NORMAL"));
+                .andExpect(jsonPath("$.result.generatedTestCases[0].category").value("NORMAL"))
+                .andExpect(jsonPath("$.result.securityFindings[0].severity").value("HIGH"));
     }
 
     @Test
@@ -146,6 +153,37 @@ class AnalysisControllerTest {
                 .andExpect(jsonPath("$[1].id").value(1));
     }
 
+    @Test
+    void returnsPaginatedFilteredHistory() throws Exception {
+        when(analysisService.findHistory(
+                any(), eq(1), eq(10), eq("Main"), eq(ProgrammingLanguage.JAVA), eq("oldest")))
+                .thenReturn(new AnalysisHistoryResponse(
+                        List.of(response(4L, ProgrammingLanguage.JAVA)),
+                        1, 10, 14, 2, false, true
+                ));
+
+        mockMvc.perform(get("/api/analyses/history")
+                        .param("page", "1")
+                        .param("size", "10")
+                        .param("search", "Main")
+                        .param("language", "JAVA")
+                        .param("sort", "oldest"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(4))
+                .andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.size").value(10))
+                .andExpect(jsonPath("$.totalElements").value(14))
+                .andExpect(jsonPath("$.last").value(true));
+    }
+
+    @Test
+    void deletesOwnedAnalysis() throws Exception {
+        mockMvc.perform(delete("/api/analyses/7"))
+                .andExpect(status().isNoContent());
+
+        verify(analysisService).delete(any(), eq(7L));
+    }
+
     private AnalysisResponse response(Long id, ProgrammingLanguage language) {
         return new AnalysisResponse(
                 id,
@@ -168,6 +206,14 @@ class AnalysisControllerTest {
                                 "Expected result",
                                 "Covers normal behavior",
                                 "High confidence"
+                        )),
+                        List.of(new SecurityFindingResult(
+                                "Unsafe input flow",
+                                SecuritySeverity.HIGH,
+                                "Untrusted input reaches a sensitive operation.",
+                                "Main.java:12",
+                                "Validate and constrain the input.",
+                                "Medium confidence because surrounding code is unavailable."
                         ))
                 ),
                 null

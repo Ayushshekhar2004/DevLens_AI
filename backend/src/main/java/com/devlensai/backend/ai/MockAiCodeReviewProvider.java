@@ -28,7 +28,8 @@ public class MockAiCodeReviewProvider implements AiCodeReviewProvider {
                         "",
                         "The mock provider does not infer executable behavior.",
                         "WARNING: Expected output is intentionally omitted because no AI review was performed."
-                ))
+                )),
+                List.of()
         );
     }
 

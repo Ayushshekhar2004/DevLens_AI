@@ -11,6 +11,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OrderColumn;
@@ -22,7 +23,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "analyses")
+@Table(
+        name = "analyses",
+        indexes = {
+                @Index(name = "idx_analyses_user_created", columnList = "user_id, created_at"),
+                @Index(name = "idx_analyses_user_language", columnList = "user_id, programming_language")
+        }
+)
 public class Analysis {
 
     @Id
@@ -82,6 +89,11 @@ public class Analysis {
     @OrderColumn(name = "item_order")
     private List<GeneratedTestCase> generatedTestCases = new ArrayList<>();
 
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "analysis_security_findings", joinColumns = @JoinColumn(name = "analysis_id"))
+    @OrderColumn(name = "item_order")
+    private List<SecurityFinding> securityFindings = new ArrayList<>();
+
     @Column(name = "failure_reason", columnDefinition = "TEXT")
     private String failureReason;
 
@@ -110,6 +122,10 @@ public class Analysis {
         result.generatedTestCases().stream()
                 .map(GeneratedTestCase::new)
                 .forEach(this.generatedTestCases::add);
+        this.securityFindings.clear();
+        result.securityFindings().stream()
+                .map(SecurityFinding::new)
+                .forEach(this.securityFindings::add);
         this.failureReason = null;
         this.status = AnalysisStatus.COMPLETED;
     }
@@ -167,6 +183,9 @@ public class Analysis {
                 improvedCode,
                 generatedTestCases.stream()
                         .map(GeneratedTestCase::toResult)
+                        .toList(),
+                securityFindings.stream()
+                        .map(SecurityFinding::toResult)
                         .toList()
         );
     }

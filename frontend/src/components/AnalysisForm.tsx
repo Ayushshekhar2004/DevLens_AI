@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { AnalysisResults } from './AnalysisResults'
 import { createAnalysis } from '../services/analysisApi'
+import { ApiError } from '../services/apiError'
 import type { AnalysisResponse, ProgrammingLanguage } from '../types/analysis'
 
 const languages: Array<{ value: ProgrammingLanguage; label: string }> = [
@@ -16,7 +17,12 @@ type SubmissionState =
   | { state: 'success'; analysis: AnalysisResponse }
   | { state: 'error'; message: string }
 
-export function AnalysisForm() {
+interface AnalysisFormProps {
+  token: string
+  onUnauthorized: () => void
+}
+
+export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
   const [language, setLanguage] = useState<ProgrammingLanguage>('JAVA')
   const [sourceCode, setSourceCode] = useState('')
   const [submission, setSubmission] = useState<SubmissionState>({ state: 'idle' })
@@ -33,9 +39,13 @@ export function AnalysisForm() {
     setSubmission({ state: 'loading' })
 
     try {
-      const analysis = await createAnalysis({ language, sourceCode })
+      const analysis = await createAnalysis({ language, sourceCode }, token)
       setSubmission({ state: 'success', analysis })
     } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 401) {
+        onUnauthorized()
+        return
+      }
       const message = error instanceof Error ? error.message : 'Unable to submit your code.'
       setSubmission({ state: 'error', message })
     }

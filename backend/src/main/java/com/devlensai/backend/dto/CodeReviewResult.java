@@ -10,7 +10,8 @@ public record CodeReviewResult(
         List<String> edgeCases,
         List<String> suggestions,
         String improvedCode,
-        List<GeneratedTestCaseResult> generatedTestCases
+        List<GeneratedTestCaseResult> generatedTestCases,
+        List<SecurityFindingResult> securityFindings
 ) {
 
     public CodeReviewResult {
@@ -18,5 +19,6 @@ public record CodeReviewResult(
         edgeCases = List.copyOf(edgeCases);
         suggestions = List.copyOf(suggestions);
         generatedTestCases = List.copyOf(generatedTestCases);
+        securityFindings = List.copyOf(securityFindings);
     }
 }

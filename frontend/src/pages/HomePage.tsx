@@ -3,13 +3,21 @@ import { BackendStatus } from '../components/BackendStatus'
 import { AnalysisForm } from '../components/AnalysisForm'
 import { getBackendHealth } from '../services/healthApi'
 import type { HealthResponse } from '../types/health'
+import type { AuthSession } from '../types/auth'
 
 type RequestState =
   | { state: 'loading' }
   | { state: 'success'; health: HealthResponse }
   | { state: 'error'; message: string }
 
-export function HomePage() {
+interface HomePageProps {
+  session: AuthSession
+  onLogout: () => void
+  onHistory: () => void
+  onSessionExpired: () => void
+}
+
+export function HomePage({ session, onLogout, onHistory, onSessionExpired }: HomePageProps) {
   const [request, setRequest] = useState<RequestState>({ state: 'loading' })
   const [requestNumber, setRequestNumber] = useState(0)
 
@@ -68,7 +76,21 @@ export function HomePage() {
         </div>
       </header>
 
-      <AnalysisForm />
+      <div className="account-bar">
+        <div>
+          <span className="account-avatar" aria-hidden="true">{session.user.name.charAt(0).toUpperCase()}</span>
+          <div>
+            <strong>{session.user.name}</strong>
+            <span>{session.user.email}</span>
+          </div>
+        </div>
+        <div className="account-actions">
+          <button className="secondary-button" type="button" onClick={onHistory}>History</button>
+          <button className="secondary-button" type="button" onClick={onLogout}>Log out</button>
+        </div>
+      </div>
+
+      <AnalysisForm token={session.token} onUnauthorized={onSessionExpired} />
     </main>
   )
 }
