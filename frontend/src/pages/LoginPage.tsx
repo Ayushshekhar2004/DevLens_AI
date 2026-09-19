@@ -16,7 +16,7 @@ export function LoginPage({ notice, initialEmail = '', onAuthenticated, onShowRe
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
 
@@ -26,13 +26,12 @@ export function LoginPage({ notice, initialEmail = '', onAuthenticated, onShowRe
     }
 
     setIsLoading(true)
-    try {
-      onAuthenticated(await loginUser({ email: email.trim(), password }))
-    } catch (requestError: unknown) {
-      setError(requestError instanceof Error ? requestError.message : 'Unable to log in.')
-    } finally {
-      setIsLoading(false)
-    }
+    loginUser({ email: email.trim(), password })
+      .then(onAuthenticated)
+      .catch((requestError: unknown) => {
+        setError(requestError instanceof Error ? requestError.message : 'Unable to log in.')
+      })
+      .finally(() => setIsLoading(false))
   }
 
   return (

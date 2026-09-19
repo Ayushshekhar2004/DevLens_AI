@@ -28,27 +28,27 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
   const [submission, setSubmission] = useState<SubmissionState>({ state: 'idle' })
   const sourceCodeRef = useRef<HTMLTextAreaElement>(null)
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     if (!sourceCode.trim()) {
       setSubmission({ state: 'error', message: 'Enter some code before starting an analysis.' })
+      sourceCodeRef.current?.focus()
       return
     }
 
     setSubmission({ state: 'loading' })
-
-    try {
-      const analysis = await createAnalysis({ language, sourceCode }, token)
-      setSubmission({ state: 'success', analysis })
-    } catch (error: unknown) {
-      if (error instanceof ApiError && error.status === 401) {
-        onUnauthorized()
-        return
-      }
-      const message = error instanceof Error ? error.message : 'Unable to submit your code.'
-      setSubmission({ state: 'error', message })
-    }
+    createAnalysis({ language, sourceCode }, token)
+      .then((analysis) => setSubmission({ state: 'success', analysis }))
+      .catch((error: unknown) => {
+        if (error instanceof ApiError && error.status === 401) {
+          setSubmission({ state: 'idle' })
+          onUnauthorized()
+          return
+        }
+        const message = error instanceof Error ? error.message : 'Unable to submit your code.'
+        setSubmission({ state: 'error', message })
+      })
   }
 
   function startNewAnalysis() {
@@ -103,6 +103,7 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
           placeholder="Paste your code here…"
           spellCheck={false}
           aria-invalid={submission.state === 'error' && !sourceCode.trim()}
+          aria-describedby={submission.state === 'error' && !sourceCode.trim() ? 'analysis-error' : undefined}
           disabled={submission.state === 'loading'}
         />
 
@@ -129,7 +130,7 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
               <span className="error-mark" aria-hidden="true">!</span>
               <div>
                 <strong>Analysis could not be completed</strong>
-                <p>{submission.message}</p>
+                <p id="analysis-error">{submission.message}</p>
               </div>
             </div>
           )}

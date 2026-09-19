@@ -13,6 +13,7 @@ import type {
 interface HistoryPageProps {
   session: AuthSession
   onDashboard: () => void
+  onAnalytics: () => void
   onLogout: () => void
   onSessionExpired: () => void
 }
@@ -22,7 +23,7 @@ type HistoryState =
   | { state: 'success'; history: AnalysisHistoryResponse }
   | { state: 'error'; message: string }
 
-export function HistoryPage({ session, onDashboard, onLogout, onSessionExpired }: HistoryPageProps) {
+export function HistoryPage({ session, onDashboard, onAnalytics, onLogout, onSessionExpired }: HistoryPageProps) {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [language, setLanguage] = useState<ProgrammingLanguage | ''>('')
@@ -74,6 +75,7 @@ export function HistoryPage({ session, onDashboard, onLogout, onSessionExpired }
   }
 
   async function confirmDelete(analysis: AnalysisResponse) {
+    if (deletingId !== null) return
     const confirmed = window.confirm(`Delete analysis #${analysis.id}? This cannot be undone.`)
     if (!confirmed) return
 
@@ -108,6 +110,7 @@ export function HistoryPage({ session, onDashboard, onLogout, onSessionExpired }
         </div>
         <div className="history-header-actions">
           <button className="secondary-button" type="button" onClick={onDashboard}>New analysis</button>
+          <button className="secondary-button" type="button" onClick={onAnalytics}>Analytics</button>
           <button className="secondary-button" type="button" onClick={onLogout}>Log out</button>
         </div>
       </header>
@@ -156,20 +159,20 @@ export function HistoryPage({ session, onDashboard, onLogout, onSessionExpired }
           {historyState.state === 'loading' && <div className="history-state" role="status"><span className="progress-spinner" aria-hidden="true" /><p>Loading your analyses…</p></div>}
           {historyState.state === 'error' && <div className="history-state history-state--error" role="alert"><p>{historyState.message}</p><button className="retry-button" type="button" onClick={retry}>Try again</button></div>}
           {historyState.state === 'success' && historyState.history.content.length === 0 && (
-            <div className="history-state"><h3>No analyses found</h3><p>{search || language ? 'Try changing your search or filters.' : 'Create your first analysis to see it here.'}</p></div>
+            <div className="history-state"><h3>{search || language ? 'No matching analyses' : 'No analyses yet'}</h3><p>{search || language ? 'Try a different search or language filter.' : 'Create your first analysis to see it here.'}</p>{search || language ? <button className="retry-button" type="button" onClick={() => { setSearchInput(''); setSearch(''); setLanguage(''); setPage(0) }}>Clear filters</button> : <button className="retry-button" type="button" onClick={onDashboard}>Create an analysis</button>}</div>
           )}
           {historyState.state === 'success' && historyState.history.content.length > 0 && (
             <>
               <div className="history-list">
                 {historyState.history.content.map((analysis) => (
                   <article className="history-item" key={analysis.id}>
-                    <button className="history-open" type="button" onClick={() => setSelected(analysis)}>
+                    <button className="history-open" type="button" aria-label={`Open analysis #${analysis.id}`} onClick={() => setSelected(analysis)}>
                       <span className="history-item-top"><strong>Analysis #{analysis.id}</strong><span className={`result-status result-status--${analysis.status.toLowerCase()}`}>{analysis.status}</span></span>
                       <span className="history-meta">{analysis.language} · {new Date(analysis.createdAt).toLocaleString()}</span>
                       <span className="history-summary">{analysis.result?.summary || analysis.failureReason || 'No summary available'}</span>
                       <code>{analysis.sourceCode.slice(0, 180)}{analysis.sourceCode.length > 180 ? '…' : ''}</code>
                     </button>
-                    <button className="delete-button" type="button" onClick={() => confirmDelete(analysis)} disabled={deletingId === analysis.id}>
+                    <button className="delete-button" type="button" aria-label={`Delete analysis #${analysis.id}`} onClick={() => confirmDelete(analysis)} disabled={deletingId !== null}>
                       {deletingId === analysis.id ? 'Deleting…' : 'Delete'}
                     </button>
                   </article>

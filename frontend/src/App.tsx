@@ -1,13 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { HistoryPage } from './pages/HistoryPage'
+import { AnalyticsPage } from './pages/AnalyticsPage'
 import { clearAuthSession, loadAuthSession, saveAuthSession } from './services/authSession'
 import type { AuthSession } from './types/auth'
 
 type AuthPage = 'login' | 'register'
-type AppPage = 'dashboard' | 'history'
+type AppPage = 'dashboard' | 'history' | 'analytics'
 
 export default function App() {
   const [session, setSession] = useState<AuthSession | null>(() => loadAuthSession())
@@ -15,6 +16,13 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('')
   const [notice, setNotice] = useState<string | undefined>()
   const [appPage, setAppPage] = useState<AppPage>('dashboard')
+
+  useEffect(() => {
+    const page = session
+      ? { dashboard: 'New analysis', history: 'History', analytics: 'Analytics' }[appPage]
+      : authPage === 'register' ? 'Create account' : 'Log in'
+    document.title = `${page} | DevLens AI`
+  }, [appPage, authPage, session])
 
   function authenticate(nextSession: AuthSession) {
     saveAuthSession(nextSession)
@@ -36,6 +44,18 @@ export default function App() {
         <HistoryPage
           session={session}
           onDashboard={() => setAppPage('dashboard')}
+          onAnalytics={() => setAppPage('analytics')}
+          onLogout={() => logout('You have been logged out.')}
+          onSessionExpired={() => logout('Your session expired. Log in again to continue.')}
+        />
+      )
+    }
+    if (appPage === 'analytics') {
+      return (
+        <AnalyticsPage
+          session={session}
+          onDashboard={() => setAppPage('dashboard')}
+          onHistory={() => setAppPage('history')}
           onLogout={() => logout('You have been logged out.')}
           onSessionExpired={() => logout('Your session expired. Log in again to continue.')}
         />
@@ -45,6 +65,7 @@ export default function App() {
       <HomePage
         session={session}
         onHistory={() => setAppPage('history')}
+        onAnalytics={() => setAppPage('analytics')}
         onLogout={() => logout('You have been logged out.')}
         onSessionExpired={() => logout('Your session expired. Log in again to continue.')}
       />

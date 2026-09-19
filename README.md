@@ -1,103 +1,96 @@
 # DevLens AI
 
-DevLens AI is an AI-assisted code-review and test-case-generation MVP. It accepts source code in a React interface, reviews it through a configurable AI provider, persists the structured result in PostgreSQL, and presents readable feedback without executing submitted code.
+DevLens AI is a portfolio project for reviewing submitted source code and suggesting test cases. It provides a React interface, a Spring Boot API, PostgreSQL persistence, JWT authentication, and a replaceable AI provider. It **does not execute submitted code**.
 
-## MVP features
+## Problem and approach
 
-- Submit Java, Python, JavaScript, or C++ source code from the browser.
-- Validate empty submissions and show loading, success, provider, and network errors.
-- Use a clearly labeled mock provider locally or an OpenAI-compatible provider configured with environment variables.
-- Return and persist a structured summary, potential bugs, time and space complexity, edge cases, suggestions, and improved code.
-- Generate and persist categorized test-case suggestions with input, expected output, explanation, and confidence or uncertainty warnings.
-- Generate and persist advisory security findings with severity, evidence, remediation, and confidence or uncertainty notes.
-- Reload stored analyses through `GET /api/analyses/{id}` and list analyses newest first through `GET /api/analyses`.
-- Display structured review sections and generated test cases without exposing raw JSON.
-- Display advisory security findings with restrained severity labels, remediation guidance, and uncertainty notes.
-- Copy improved code to the clipboard and reset the editor for a new analysis.
-- Keep failed AI analyses stored with a safe failure reason.
-- Register users with BCrypt-hashed passwords and issue signed JWTs after successful login.
-- Register and log in from the frontend, keep authentication for the current browser tab, and log out explicitly.
+Code reviews often need a first pass for possible bugs, edge cases, complexity, and test ideas. DevLens gathers these suggestions in one structured review that can be saved, revisited, compared with the original code, and searched later. AI output is advisory: it can be incomplete or wrong and requires human verification.
 
-Analysis endpoints require JWT authentication and only return the signed-in user's records. The MVP does not yet include a frontend history screen, a broader security review, or execution of submitted code.
+## Working features
 
-## Prerequisites
+- Register, log in, and log out. Analyses, history, and analytics are scoped to the authenticated user.
+- Submit Java, Python, JavaScript, or C++ source text. Blank submissions are rejected.
+- Store a review summary, potential bugs, time/space complexity notes, edge cases, suggestions, and AI-suggested code.
+- Store generated test-case suggestions with category, input, expected output or uncertainty warning, and explanation.
+- Store advisory security findings with severity, location when identifiable, remediation, and uncertainty notes.
+- Browse personal history with server-side search, language filter, newest/oldest sorting, pagination, detail view, and confirmed deletion.
+- View metrics derived from stored records: total analyses, counts by language, recent analyses, generated test-case count, and security findings by severity.
+- Compare original and suggested code, with copy buttons for both. The editor and results include loading, error, and empty states.
+- Use a clearly labeled mock provider for local development, or configure an OpenAI-compatible chat-completions provider.
 
-- Java 21 or newer
-- Maven 3.6.3 or newer
-- Node.js 20.19+ or 22.12+
-- PostgreSQL
+The mock provider returns placeholder feedback, **not a real code review**. It deliberately leaves inferred expected output blank and does not report security findings.
 
-## Set up PostgreSQL
+## Tech stack
 
-Start PostgreSQL. With Homebrew on macOS:
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 19, TypeScript, Vite 8, plain CSS |
+| Backend | Java 21, Spring Boot 4, Maven, Spring Web, Validation, Security, Data JPA |
+| Database | PostgreSQL |
+| Authentication | BCrypt password hashing, signed JWT bearer tokens |
+| AI integration | Replaceable provider interface; mock or OpenAI-compatible HTTP provider |
+| Tests | JUnit/MockMvc/Mockito; Vitest and Testing Library |
+| Containers | Docker Compose, Nginx, PostgreSQL named volume |
 
-```bash
-brew services start postgresql@18
+## System architecture
+
+```text
+Browser
+  └─ React UI ── HTTP /api + Bearer JWT ──> Spring Boot API
+                                          ├─ Auth / analysis / analytics services
+                                          ├─ JPA repositories ──> PostgreSQL
+                                          └─ CodeReviewService ──> AI provider interface
+                                                                   ├─ mock
+                                                                   └─ OpenAI-compatible API
 ```
 
-Create the application database if it does not already exist:
+In Docker, Nginx serves the built frontend and proxies `/api` to the `backend` service. The backend reaches PostgreSQL through the Compose service name `db`. In non-Docker development, Vite runs on port 5173 and calls the backend on port 8080 using `VITE_API_BASE_URL` and configured CORS.
 
-```bash
-createdb devlens
-```
+## Backend architecture
 
-Alternatively, from `psql`:
+The Java code separates `controller`, `service`, `repository`, `entity`, `dto`, `exception`, `config`, and `ai` packages. Controllers accept validated DTOs and return DTOs rather than JPA entities. Services own workflow and user-scoping rules. Repositories perform persistence and owner-scoped queries. A centralized exception handler formats validation, authentication-related, not-found, and provider-failure responses.
 
-```sql
-CREATE DATABASE devlens;
-```
+History search, filters, sorting, and pagination run in the backend database query. Analytics aggregates are derived from persisted rows rather than fabricated metrics. `GET /api/analyses` is still an unpaginated list; use `/history` for larger histories.
 
-No tables need to be created manually. During local startup, Hibernate updates the schema and creates the analysis and structured-result collection tables from the JPA model.
+## AI workflow
 
-## Run the backend
+1. `POST /api/analyses` validates the language and source text, then stores an analysis as `PENDING` for the authenticated user.
+2. `CodeReviewService` calls the selected `AiCodeReviewProvider`; controllers do not call a provider directly.
+3. The real provider sends one structured review request, asks for strict JSON, and validates the returned schema. The mock provider supplies clearly labeled placeholders without an external request.
+4. The service persists the structured review and marks the analysis `COMPLETED`. On provider timeout, API failure, unavailability, or invalid response, it marks the saved record `FAILED` and returns an explanatory API error.
+5. Later reads return the stored result or the stored failure reason. No submitted program is compiled or run.
 
-Set the local environment values, replacing the username and password with your PostgreSQL credentials. Homebrew PostgreSQL commonly uses your macOS username and an empty password for local connections.
+`AI_PROVIDER=auto` uses the real provider only when `AI_API_KEY` is present; otherwise it uses the mock. Set `AI_PROVIDER=mock` explicitly for predictable local demonstrations.
 
-```bash
-cd backend
-export DB_HOST="localhost"
-export DB_PORT="5432"
-export DB_NAME="devlens"
-export DB_USERNAME="your-postgres-user"
-export DB_PASSWORD="your-local-password"
-export SERVER_PORT="8080"
-export FRONTEND_ORIGIN="http://localhost:5173"
-export JWT_SECRET="replace-with-a-random-secret-at-least-32-bytes-long"
-export JWT_EXPIRATION_MINUTES="60"
-mvn spring-boot:run
-```
+## Authentication flow
 
-Verify the API directly:
+Registration validates the request, normalizes the email, and persists a BCrypt hash—not the plaintext password. Login checks the hash and returns a signed JWT plus public user fields. The frontend holds the session in browser `sessionStorage` (cleared on tab close, logout, expiry, or a protected API `401`) and sends `Authorization: Bearer <token>` with protected requests. The server validates the token and loads the current user before analysis or analytics logic runs. An analysis ID belonging to another user returns `404`, avoiding disclosure of its existence.
 
-```bash
-curl http://localhost:8080/api/health
-```
+## Database model
 
-Run backend tests with `mvn test` from `backend/`.
+- `users`: ID, name, unique email, BCrypt password hash, creation time.
+- `analyses`: ID, owning user, programming language, source code, status, creation time, scalar review fields, and optional failure reason.
+- JPA element-collection tables hold ordered potential bugs, edge cases, suggestions, generated test cases, and security findings. Test cases and findings are embedded values, not independently managed resources.
 
-## Authentication API
+Hibernate currently uses `ddl-auto=update` for local development. No migration framework or production migration plan is included.
 
-Register a user:
+## Important API endpoints
 
-```bash
-curl -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Ada Lovelace","email":"ada@example.com","password":"replace-with-a-strong-password"}'
-```
+| Method | Path | Purpose | Auth |
+| --- | --- | --- | --- |
+| GET | `/api/health` | Backend status | No |
+| POST | `/api/auth/register` | Create account (`201`) | No |
+| POST | `/api/auth/login` | Get JWT (`200`) | No |
+| POST | `/api/analyses` | Create and review analysis (`201` on success) | Yes |
+| GET | `/api/analyses/{id}` | Read own analysis | Yes |
+| GET | `/api/analyses` | List own analyses, newest first | Yes |
+| GET | `/api/analyses/history` | Paginated, searchable history | Yes |
+| DELETE | `/api/analyses/{id}` | Delete own analysis (`204`) | Yes |
+| GET | `/api/analytics/overview` | Owner-scoped metrics | Yes |
 
-Registration returns public user fields only. Passwords are hashed with BCrypt before persistence; plaintext passwords and password hashes are never returned.
+History supports `page` (zero-based), `size` (1–100, default 20), `search` (source code or result summary), `language` (`JAVA`, `PYTHON`, `JAVASCRIPT`, `CPP`), and `sort` (`newest` or `oldest`). Missing/invalid credentials return `401`; validation errors return `400`; missing or unowned analyses return `404`.
 
-Log in:
-
-```bash
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"ada@example.com","password":"replace-with-a-strong-password"}'
-```
-
-Successful login returns a signed token, the `Bearer` token type, expiration time, and public user details. Keep the returned token private and send it in the `Authorization` header for every analysis request.
-
-Create an analysis as the logged-in user:
+Example after logging in and copying the returned JWT:
 
 ```bash
 curl -X POST http://localhost:8080/api/analyses \
@@ -106,113 +99,88 @@ curl -X POST http://localhost:8080/api/analyses \
   -d '{"language":"JAVA","sourceCode":"public class Main {}"}'
 ```
 
-Read one of your analyses or list all of them, newest first:
+## Local installation
+
+### Docker Compose (recommended for a full-stack run)
+
+Install Docker Desktop or a Docker Engine with Compose. From the repository root:
 
 ```bash
-curl http://localhost:8080/api/analyses/1 \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
-
-curl http://localhost:8080/api/analyses \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+cp .env.example .env
+# Edit .env: replace DB_PASSWORD and JWT_SECRET with private values.
+docker compose up --build
 ```
 
-Analysis records are owned by the user who creates them. A missing, expired, or invalid token returns `401`; requesting another user's analysis returns `404` so the API does not reveal whether that record exists.
+Open `http://localhost:5173`; check `http://localhost:8080/api/health`. Use `docker compose logs -f` for logs and `docker compose down` to stop. PostgreSQL data stays in the named `postgres_data` volume. **`docker compose down --volumes` permanently removes that local database data.** If host ports 5432, 8080, or 5173 are occupied, change `POSTGRES_PORT`, `BACKEND_PORT`, or `FRONTEND_PORT` in `.env`; keep `FRONTEND_ORIGIN` aligned with the browser URL.
 
-Paginated history is available at `GET /api/analyses/history`. Page numbers start at zero, the default page size is 20, and the maximum page size is 100:
+### Run without Docker
+
+Prerequisites: Java 21 (the project's target version), Maven, Node.js compatible with Vite 8, and PostgreSQL. Create a database, for example `createdb devlens`. In one terminal:
 
 ```bash
-curl "http://localhost:8080/api/analyses/history?page=0&size=20&sort=newest" \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
-
-curl "http://localhost:8080/api/analyses/history?search=Main&language=JAVA&sort=oldest" \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+cd backend
+export DB_HOST=localhost DB_PORT=5432 DB_NAME=devlens
+export DB_USERNAME=your_postgres_user DB_PASSWORD=your_local_password
+export JWT_SECRET=replace_with_a_private_random_value_at_least_32_bytes_long
+export AI_PROVIDER=mock FRONTEND_ORIGIN=http://localhost:5173
+mvn spring-boot:run
 ```
 
-The optional `search` parameter searches source code and stored result summaries. `language` accepts `JAVA`, `PYTHON`, `JAVASCRIPT`, or `CPP`. `sort` accepts `newest` or `oldest`. Filtering, sorting, pagination, and ownership constraints are applied by the database query.
-
-Delete one of your analyses:
-
-```bash
-curl -X DELETE http://localhost:8080/api/analyses/1 \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
-```
-
-A successful deletion returns `204 No Content`. Missing records and records owned by another user both return `404`.
-
-Authenticated developer analytics are available for the current user:
-
-```bash
-curl http://localhost:8080/api/analytics/overview \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
-```
-
-The overview contains total analyses, counts by programming language, the five most recent analysis summaries, the total number of persisted generated test cases, and security findings grouped by their stored severity. All aggregates are owner-scoped database queries. Free-text bug descriptions and finding titles are not grouped into invented categories.
-
-## Run the frontend
-
-In a second terminal:
+In another terminal:
 
 ```bash
 cd frontend
 cp .env.example .env
-npm install
+npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173`. Run `npm run build` to type-check and create a production build.
+The frontend example sets `VITE_API_BASE_URL=http://localhost:8080`. The backend and frontend `.env.example` files are reference templates; exporting environment variables (or loading a private local file yourself) supplies the non-Docker backend configuration.
 
-If either application uses a different port, keep `VITE_API_BASE_URL` in `frontend/.env` and `FRONTEND_ORIGIN` in the backend environment aligned with their actual URLs.
+## Environment variables
 
-## Run frontend and backend together
+Never commit populated `.env` files. The root `.env.example` is for Compose; `backend/.env.example` and `frontend/.env.example` document standalone development.
 
-Keep PostgreSQL running, then use two terminals.
+| Variable | Purpose |
+| --- | --- |
+| `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL database and credentials; required for Compose |
+| `DB_HOST`, `DB_PORT` | Backend database host/port; Compose sets these to `db:5432` |
+| `JWT_SECRET` | Private signing secret, at least 32 bytes |
+| `JWT_EXPIRATION_MINUTES` | Token lifetime; default 60 |
+| `AI_PROVIDER` | `mock`, `auto`, or `openai-compatible` |
+| `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_TIMEOUT_SECONDS` | Real provider credentials, endpoint, model, and timeout |
+| `VITE_API_BASE_URL` | Browser API origin; `/` for Docker's same-origin Nginx proxy |
+| `FRONTEND_ORIGIN` | Allowed browser origin for backend CORS |
+| `SERVER_PORT`, `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT` | Runtime/container host ports as applicable |
 
-Terminal 1:
+`VITE_API_BASE_URL` is embedded in frontend assets at build time; do not put secrets in any `VITE_*` variable. A real provider is optional; a configured key can cause submitted source text to be sent to that external service.
 
-```bash
-cd backend
-export DB_HOST="localhost"
-export DB_PORT="5432"
-export DB_NAME="devlens"
-export DB_USERNAME="your-postgres-user"
-export DB_PASSWORD="your-local-password"
-export FRONTEND_ORIGIN="http://localhost:5173"
-export JWT_SECRET="replace-with-a-random-secret-at-least-32-bytes-long"
-export JWT_EXPIRATION_MINUTES="60"
-mvn spring-boot:run
-```
-
-Terminal 2:
+## Testing
 
 ```bash
-cd frontend
-cp .env.example .env  # only needed once
-npm install           # only needed after dependency changes
-npm run dev
+cd backend && mvn test
+cd ../frontend && npm ci && npm test && npm run build
 ```
 
-Open `http://localhost:5173`, create an account or log in, and submit code from the protected dashboard. The frontend stores the JWT and public user details in `sessionStorage`, sends the token as `Authorization: Bearer <token>` for analysis requests, and clears the session on logout, token expiry, or a backend `401` response. Passwords are never stored.
+Backend tests cover validation, authentication, ownership, controller responses, service transitions, analytics, and AI-provider failure handling. Frontend tests cover login/session behavior, code submission states, structured review and comparison rendering, analytics, and history interactions. These are automated checks, not a full browser accessibility or production deployment test. Use Java 21 for the documented Maven command; on this machine's Java 26 installation, Mockito needs an explicit Byte Buddy agent to run the backend tests.
 
-## AI provider configuration
+## Security considerations
 
-Local development defaults safely to the clearly labeled mock provider when no API key is configured:
+- User-submitted source is stored in PostgreSQL and, with a real provider, transmitted to that configured AI endpoint. Do not submit secrets or proprietary code without authorization.
+- Passwords are BCrypt-hashed; JWT, database, and provider secrets come from environment variables. Tokens are stored in per-tab `sessionStorage`, which limits persistence but remains accessible to JavaScript if an XSS vulnerability exists.
+- Owner-scoped queries limit access to saved analyses. The app does not execute submitted code.
+- AI bug, complexity, test, and security suggestions are **advisory**. Generated expected outputs may be uncertain; security findings can be false positives or miss vulnerabilities. Use human review, tests, static analysis, and professional audit where appropriate.
+- Docker configuration is intended for local use, not production hardening. Use HTTPS, managed secrets, database backups, and a proper migration strategy before any public deployment.
 
-```bash
-export AI_PROVIDER="mock"
-```
+## Known limitations
 
-To use an OpenAI-compatible chat-completions API, configure all provider values through environment variables:
+- The mock provider returns placeholders, not code-specific AI insights. A real provider needs a valid API key and compatible endpoint; responses can still be wrong or fail.
+- Analysis creation calls the provider synchronously, so the request can wait until completion or timeout. There is no background job queue or live progress stream.
+- There is no submitted-code execution, generated-test execution, static-analysis engine, or malware analysis.
+- `GET /api/analyses` is unpaginated; the History endpoint is paginated.
+- Authentication has no refresh-token, password-reset, email-verification, or account-recovery flow.
+- Local schema evolution relies on Hibernate `update`; production migrations, deployment hardening, and full end-to-end browser coverage are not implemented.
 
-```bash
-export AI_PROVIDER="openai-compatible"
-export AI_API_KEY="your-secret-api-key"
-export AI_BASE_URL="https://api.openai.com/v1/"
-export AI_MODEL="gpt-4.1-mini"
-export AI_TIMEOUT_SECONDS="30"
-```
+## Future roadmap
 
-Never commit a real API key. `AI_PROVIDER=auto` selects the real provider when `AI_API_KEY` is present and otherwise uses the mock. The provider asks for strict structured JSON and validates the complete response schema before returning a result.
-
-Security findings are advisory rather than proof of a vulnerability. The provider reviews only the submitted source text without executing it, performing malware analysis, inspecting dependencies, or observing runtime configuration. Findings can therefore contain false positives or miss issues when relevant context is absent. Validate important findings through human review and appropriate security tooling before acting on them.
-
-The `CodeReviewService` depends on `AiCodeReviewProvider`, not a specific vendor. Provider HTTP details, authentication, error translation, and JSON parsing therefore remain outside controllers and application-level review logic.
+Potential next steps—not current features—include database migrations, asynchronous review jobs, stronger automated browser/accessibility testing, account recovery, and deployment hardening. Any code-execution or test-runner capability would require a separate sandbox design and security review.

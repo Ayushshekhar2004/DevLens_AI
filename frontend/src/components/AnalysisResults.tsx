@@ -3,7 +3,7 @@ import { AnalysisSummary } from './AnalysisSummary'
 import { ComplexityAnalysis } from './ComplexityAnalysis'
 import { EdgeCases } from './EdgeCases'
 import { GeneratedTestCases } from './GeneratedTestCases'
-import { ImprovedCode } from './ImprovedCode'
+import { CodeComparison } from './CodeComparison'
 import { PotentialBugs } from './PotentialBugs'
 import { Suggestions } from './Suggestions'
 import { SecurityFindings } from './SecurityFindings'
@@ -47,7 +47,13 @@ export function AnalysisResults({ analysis, onReset, actionLabel = 'New analysis
           <Suggestions suggestions={analysis.result.suggestions} />
           <SecurityFindings findings={analysis.result.securityFindings ?? []} />
           <GeneratedTestCases testCases={analysis.result.generatedTestCases} />
-          <ImprovedCode code={analysis.result.improvedCode} />
+          <CodeComparison
+            originalCode={analysis.sourceCode}
+            improvedCode={analysis.result.improvedCode}
+            suggestions={analysis.result.suggestions}
+            timeComplexity={analysis.result.timeComplexity}
+            spaceComplexity={analysis.result.spaceComplexity}
+          />
         </div>
       ) : (
         <div className="results-unavailable">

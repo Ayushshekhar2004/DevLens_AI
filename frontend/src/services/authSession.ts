@@ -8,7 +8,14 @@ export function loadAuthSession(): AuthSession | null {
     if (!stored) return null
 
     const session = JSON.parse(stored) as AuthSession
-    if (!session.token || !session.user || new Date(session.expiresAt).getTime() <= Date.now()) {
+    const expiresAt = new Date(session.expiresAt).getTime()
+    if (
+      !session.token
+      || !session.user?.name
+      || !session.user.email
+      || !Number.isFinite(expiresAt)
+      || expiresAt <= Date.now()
+    ) {
       clearAuthSession()
       return null
     }

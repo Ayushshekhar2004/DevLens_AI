@@ -2,6 +2,10 @@ package com.devlensai.backend.config;
 
 import com.devlensai.backend.controller.AnalysisController;
 import com.devlensai.backend.controller.HealthController;
+import com.devlensai.backend.dto.AnalysisResponse;
+import com.devlensai.backend.dto.CreateAnalysisRequest;
+import com.devlensai.backend.entity.AnalysisStatus;
+import com.devlensai.backend.entity.ProgrammingLanguage;
 import com.devlensai.backend.entity.User;
 import com.devlensai.backend.repository.UserRepository;
 import com.devlensai.backend.service.AnalysisService;
@@ -15,12 +19,18 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.Instant;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.http.MediaType;
 
 @WebMvcTest({AnalysisController.class, HealthController.class})
 @Import(SecurityConfig.class)
@@ -74,6 +84,58 @@ class SecurityConfigTest {
                 .andExpect(jsonPath("$").isArray());
 
         verify(analysisService).findAllNewestFirst(user);
+    }
+
+    @Test
+    void createsAnalysisAsUserResolvedFromBearerToken() throws Exception {
+        User user = new User("Ada Lovelace", "ada@example.com", "password-hash");
+        when(jwtService.extractSubject("valid-token")).thenReturn("ada@example.com");
+        when(userRepository.findByEmailIgnoreCase("ada@example.com")).thenReturn(Optional.of(user));
+        when(analysisService.create(eq(user), any(CreateAnalysisRequest.class)))
+                .thenReturn(new AnalysisResponse(
+                        9L,
+                        ProgrammingLanguage.JAVA,
+                        "public class Main {}",
+                        AnalysisStatus.COMPLETED,
+                        Instant.parse("2026-09-12T10:00:00Z"),
+                        null,
+                        null
+                ));
+
+        mockMvc.perform(post("/api/analyses")
+                        .header("Authorization", "Bearer valid-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"language":"JAVA","sourceCode":"public class Main {}"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(9));
+
+        verify(analysisService).create(eq(user), any(CreateAnalysisRequest.class));
+    }
+
+    @Test
+    void rejectsValidTokenWhenItsUserNoLongerExists() throws Exception {
+        when(jwtService.extractSubject("orphaned-token")).thenReturn("deleted@example.com");
+        when(userRepository.findByEmailIgnoreCase("deleted@example.com")).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/analyses")
+                        .header("Authorization", "Bearer orphaned-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("A valid Bearer token is required"));
+
+        verify(analysisService, never()).findAllNewestFirst(any());
+    }
+
+    @Test
+    void rejectsTokenWithoutSubjectWithoutQueryingForAUser() throws Exception {
+        when(jwtService.extractSubject("subjectless-token")).thenReturn(null);
+
+        mockMvc.perform(get("/api/analyses")
+                        .header("Authorization", "Bearer subjectless-token"))
+                .andExpect(status().isUnauthorized());
+
+        verify(userRepository, never()).findByEmailIgnoreCase(any());
     }
 
     @Test

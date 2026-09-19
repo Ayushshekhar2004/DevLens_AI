@@ -49,6 +49,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             String email = jwtService.extractSubject(token);
+            if (email == null || email.isBlank()) {
+                return;
+            }
             User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
             if (user != null) {
                 UsernamePasswordAuthenticationToken authentication =

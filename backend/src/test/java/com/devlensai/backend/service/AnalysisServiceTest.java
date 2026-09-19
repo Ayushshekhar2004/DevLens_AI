@@ -111,8 +111,10 @@ class AnalysisServiceTest {
     @Test
     void scopesReadsToAuthenticatedUser() {
         User authenticatedUser = mock(User.class);
+        Analysis anotherUsersAnalysis = mock(Analysis.class);
         when(authenticatedUser.getId()).thenReturn(42L);
         when(repository.findAllByUserIdOrderByCreatedAtDesc(42L)).thenReturn(List.of());
+        when(repository.findById(7L)).thenReturn(Optional.of(anotherUsersAnalysis));
         when(repository.findByIdAndUserId(7L, 42L)).thenReturn(Optional.empty());
 
         assertThat(analysisService.findAllNewestFirst(authenticatedUser)).isEmpty();
@@ -121,6 +123,7 @@ class AnalysisServiceTest {
 
         verify(repository).findAllByUserIdOrderByCreatedAtDesc(42L);
         verify(repository).findByIdAndUserId(7L, 42L);
+        verify(repository, never()).findById(7L);
     }
 
     @Test
