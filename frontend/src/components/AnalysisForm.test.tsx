@@ -1,8 +1,14 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnalysisForm } from './AnalysisForm'
 import { analysis } from '../test/fixtures'
+import { getOllamaProfiles, testOllamaConnection } from '../services/ollamaApi'
+
+vi.mock('../services/ollamaApi', () => ({
+  getOllamaProfiles: vi.fn().mockResolvedValue([]),
+  testOllamaConnection: vi.fn(),
+}))
 
 const fetchMock = vi.fn<typeof fetch>()
 vi.stubGlobal('fetch', fetchMock)
@@ -58,11 +64,34 @@ describe('AnalysisForm', () => {
     render(<AnalysisForm token="test-token" onUnauthorized={vi.fn()} />)
 
     const editor = screen.getByLabelText('Source code')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Analyze Code' })).toBeEnabled())
     fireEvent.change(editor, { target: { value: 'class Main {}' } })
     fireEvent.submit(screen.getByRole('button', { name: 'Analyze Code' }).closest('form')!)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('AI service is temporarily unavailable')
     await userEvent.type(editor, ' ')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('requires a successful connection test and installed model for Ollama', async () => {
+    vi.mocked(getOllamaProfiles).mockResolvedValueOnce([{ id: 'lan', displayName: 'Trusted LAN' }])
+    vi.mocked(testOllamaConnection).mockResolvedValueOnce(['installed:latest'])
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(analysis), { status: 201 }))
+    render(<AnalysisForm token="test-token" onUnauthorized={vi.fn()} />)
+
+    expect(await screen.findByLabelText('Ollama connection')).toHaveValue('lan')
+    fireEvent.change(screen.getByLabelText('Source code'), { target: { value: analysis.sourceCode } })
+    await userEvent.click(screen.getByRole('button', { name: 'Analyze Code' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Test the Ollama connection')
+    await userEvent.click(screen.getByRole('button', { name: 'Test Connection' }))
+    expect(await screen.findByLabelText('Installed model')).toBeInTheDocument()
+    expect(testOllamaConnection).toHaveBeenCalledWith('lan', 'test-token')
+    await userEvent.selectOptions(screen.getByLabelText('Installed model'), 'installed:latest')
+    await userEvent.click(screen.getByRole('button', { name: 'Analyze Code' }))
+    expect(await screen.findByText('Review completed and saved.')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8080/api/analyses?ollamaProfile=lan&ollamaModel=installed%3Alatest',
+      expect.objectContaining({ method: 'POST' }),
+    )
   })
 })

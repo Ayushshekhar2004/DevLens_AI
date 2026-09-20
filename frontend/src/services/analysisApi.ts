@@ -8,8 +8,10 @@ import { errorFromResponse } from './apiError'
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '')
 
-export async function createAnalysis(request: CreateAnalysisRequest, token: string): Promise<AnalysisResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/analyses`, {
+export async function createAnalysis(request: CreateAnalysisRequest, token: string,
+  ollama?: { profile: string; model: string }): Promise<AnalysisResponse> {
+  const query = ollama ? `?${new URLSearchParams({ ollamaProfile: ollama.profile, ollamaModel: ollama.model })}` : ''
+  const response = await fetch(`${apiBaseUrl}/api/analyses${query}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

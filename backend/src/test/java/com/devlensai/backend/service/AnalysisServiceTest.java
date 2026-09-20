@@ -147,6 +147,33 @@ class AnalysisServiceTest {
     }
 
     @Test
+    void loadsHistoryWithoutOptionalFilters() {
+        User authenticatedUser = mock(User.class);
+        when(authenticatedUser.getId()).thenReturn(42L);
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenAnswer(invocation -> Page.empty(invocation.getArgument(1)));
+
+        var response = analysisService.findHistory(authenticatedUser, 0, 10, null, null, "newest");
+
+        verify(repository).findAll(any(Specification.class), any(Pageable.class));
+        assertThat(response.content()).isEmpty();
+        assertThat(response.totalElements()).isZero();
+    }
+
+    @Test
+    void loadsHistoryWithOnlyOneOptionalFilter() {
+        User authenticatedUser = mock(User.class);
+        when(authenticatedUser.getId()).thenReturn(42L);
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenAnswer(invocation -> Page.empty(invocation.getArgument(1)));
+
+        analysisService.findHistory(authenticatedUser, 0, 10, "Main", null, "newest");
+        analysisService.findHistory(authenticatedUser, 0, 10, null, ProgrammingLanguage.JAVA, "newest");
+
+        verify(repository, times(2)).findAll(any(Specification.class), any(Pageable.class));
+    }
+
+    @Test
     void rejectsInvalidHistoryPaginationBeforeQueryingDatabase() {
         assertThatThrownBy(() -> analysisService.findHistory(user, -1, 20, null, null, "newest"))
                 .isInstanceOf(InvalidHistoryQueryException.class)

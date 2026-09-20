@@ -15,6 +15,7 @@ import com.devlensai.backend.exception.AiProviderException;
 import com.devlensai.backend.exception.AiProviderMalformedResponseException;
 import com.devlensai.backend.exception.AiProviderTimeoutException;
 import com.devlensai.backend.exception.AiProviderUnavailableException;
+import com.devlensai.backend.exception.OllamaSelectionException;
 import com.devlensai.backend.repository.AnalysisRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
@@ -38,13 +39,19 @@ public class AnalysisService {
     }
 
     public AnalysisResponse create(User user, CreateAnalysisRequest request) {
+        return create(user, request, null, null);
+    }
+
+    public AnalysisResponse create(User user, CreateAnalysisRequest request, String profileId, String model) {
         Analysis analysis = analysisRepository.save(
                 new Analysis(user, request.language(), request.sourceCode())
         );
 
         CodeReviewResult result;
         try {
-            result = codeReviewService.review(request.language(), request.sourceCode());
+            result = profileId == null && model == null
+                    ? codeReviewService.review(request.language(), request.sourceCode())
+                    : codeReviewService.review(request.language(), request.sourceCode(), profileId, model);
         } catch (AiProviderException exception) {
             FailureDetails failure = failureDetails(exception);
             analysis.markFailed(failure.reason());
@@ -121,15 +128,14 @@ public class AnalysisService {
     }
 
     private Specification<Analysis> hasLanguage(ProgrammingLanguage language) {
-        return language == null
-                ? null
-                : (root, query, criteriaBuilder) ->
-                        criteriaBuilder.equal(root.get("programmingLanguage"), language);
+        return (root, query, criteriaBuilder) -> language == null
+                ? criteriaBuilder.conjunction()
+                : criteriaBuilder.equal(root.get("programmingLanguage"), language);
     }
 
     private Specification<Analysis> containsText(String search) {
         if (search == null || search.isBlank()) {
-            return null;
+            return (root, query, criteriaBuilder) -> criteriaBuilder.conjunction();
         }
         String pattern = "%" + search.trim().toLowerCase() + "%";
         return (root, query, criteriaBuilder) -> criteriaBuilder.or(
@@ -176,6 +182,9 @@ public class AnalysisService {
     }
 
     private FailureDetails failureDetails(AiProviderException exception) {
+        if (exception instanceof OllamaSelectionException) {
+            return new FailureDetails(HttpStatus.BAD_REQUEST, exception.getMessage());
+        }
         if (exception instanceof AiProviderTimeoutException) {
             return new FailureDetails(HttpStatus.GATEWAY_TIMEOUT, "AI provider request timed out");
         }

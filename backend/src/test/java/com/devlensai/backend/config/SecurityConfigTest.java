@@ -62,6 +62,14 @@ class SecurityConfigTest {
     }
 
     @Test
+    void rejectsOllamaDiscoveryAndConnectionTestWithoutToken() throws Exception {
+        mockMvc.perform(get("/api/ai/ollama/profiles"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/ai/ollama/profiles/local/test"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void rejectsAnalysisRequestWithInvalidToken() throws Exception {
         when(jwtService.extractSubject("invalid-token"))
                 .thenThrow(new IllegalArgumentException("invalid token"));

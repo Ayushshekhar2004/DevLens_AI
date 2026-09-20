@@ -16,6 +16,12 @@ public class DefaultCodeReviewService implements CodeReviewService {
 
     @Override
     public CodeReviewResult review(ProgrammingLanguage language, String sourceCode) {
+        return review(language, sourceCode, null, null);
+    }
+
+    @Override
+    public CodeReviewResult review(ProgrammingLanguage language, String sourceCode,
+                                   String profileId, String model) {
         if (language == null) {
             throw new IllegalArgumentException("language is required");
         }
@@ -23,6 +29,6 @@ public class DefaultCodeReviewService implements CodeReviewService {
             throw new IllegalArgumentException("sourceCode must not be blank");
         }
 
-        return provider.review(language, sourceCode);
+        return provider.review(language, sourceCode, profileId, model);
     }
 }

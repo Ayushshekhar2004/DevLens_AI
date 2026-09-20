@@ -155,6 +155,12 @@ Never commit populated `.env` files. The root `.env.example` is for Compose; `ba
 
 `VITE_API_BASE_URL` is embedded in frontend assets at build time; do not put secrets in any `VITE_*` variable. A real provider is optional; a configured key can cause submitted source text to be sent to that external service.
 
+### Opt-in local or trusted-LAN Ollama
+
+Keep the default `AI_PROVIDER=mock` or `auto` for existing snippet behavior. To use an already installed Ollama model, set `AI_PROVIDER=ollama`, `OLLAMA_MODEL` to that model's exact installed name, and configure `OLLAMA_PROFILES` as comma-separated `id|display name|http://trusted-host:port` entries. Example placeholders are in the root and backend `.env.example` files. The host-run default is `local|This machine|http://localhost:11434`; Docker users must explicitly configure a reachable trusted host address such as `host.docker.internal`, or a private-LAN IPv4 address. No model is downloaded by DevLens. Use `ollama list` and `curl http://localhost:11434/api/tags` on the Ollama machine to verify its installed models and connectivity before starting DevLens. A profile test in DevLens lists models from the selected machine; choose one before submitting code. If that model disappears, the analysis fails with a clear selection error and no cloud fallback.
+
+Only loopback, the explicit Docker host alias, or RFC1918 private IPv4 endpoints are accepted; URL redirects are not followed. Profile URLs come solely from server environment configuration, never normal analysis requests. LAN mode is intended only for trusted private networks. Do not expose Ollama publicly; DevLens does not change firewall or Ollama listener settings.
+
 ## Testing
 
 ```bash

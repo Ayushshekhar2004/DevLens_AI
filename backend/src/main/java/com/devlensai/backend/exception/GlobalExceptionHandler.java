@@ -15,6 +15,26 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(OllamaSelectionException.class)
+    public ResponseEntity<ApiErrorResponse> handleOllamaSelection(OllamaSelectionException exception) {
+        return error(HttpStatus.BAD_REQUEST, exception.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(AiProviderTimeoutException.class)
+    public ResponseEntity<ApiErrorResponse> handleOllamaTimeout() {
+        return error(HttpStatus.GATEWAY_TIMEOUT, "Ollama connection timed out", Map.of());
+    }
+
+    @ExceptionHandler(AiProviderUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleOllamaUnavailable() {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "Ollama is unavailable", Map.of());
+    }
+
+    @ExceptionHandler({AiProviderApiException.class, AiProviderMalformedResponseException.class})
+    public ResponseEntity<ApiErrorResponse> handleOllamaApiFailure() {
+        return error(HttpStatus.BAD_GATEWAY, "Ollama connection failed or returned invalid data", Map.of());
+    }
+
     @ExceptionHandler(AnalysisNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleNotFound(AnalysisNotFoundException exception) {
         return error(HttpStatus.NOT_FOUND, exception.getMessage(), Map.of());

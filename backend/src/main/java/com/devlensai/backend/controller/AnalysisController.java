@@ -34,9 +34,13 @@ public class AnalysisController {
     @PostMapping
     public ResponseEntity<AnalysisResponse> create(
             @AuthenticationPrincipal User user,
-            @Valid @RequestBody CreateAnalysisRequest request
+            @Valid @RequestBody CreateAnalysisRequest request,
+            @RequestParam(required = false) String ollamaProfile,
+            @RequestParam(required = false) String ollamaModel
     ) {
-        AnalysisResponse response = analysisService.create(user, request);
+        AnalysisResponse response = ollamaProfile == null && ollamaModel == null
+                ? analysisService.create(user, request)
+                : analysisService.create(user, request, ollamaProfile, ollamaModel);
         return ResponseEntity.created(URI.create("/api/analyses/" + response.id())).body(response);
     }
 

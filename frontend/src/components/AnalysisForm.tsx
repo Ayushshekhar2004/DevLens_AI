@@ -1,7 +1,8 @@
-import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { AnalysisResults } from './AnalysisResults'
 import { createAnalysis } from '../services/analysisApi'
 import { ApiError } from '../services/apiError'
+import { getOllamaProfiles, testOllamaConnection, type OllamaProfile } from '../services/ollamaApi'
 import type { AnalysisResponse, ProgrammingLanguage } from '../types/analysis'
 
 const languages: Array<{ value: ProgrammingLanguage; label: string }> = [
@@ -27,6 +28,46 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
   const [sourceCode, setSourceCode] = useState('')
   const [submission, setSubmission] = useState<SubmissionState>({ state: 'idle' })
   const sourceCodeRef = useRef<HTMLTextAreaElement>(null)
+  const [profiles, setProfiles] = useState<OllamaProfile[]>([])
+  const [profilesState, setProfilesState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [profile, setProfile] = useState('')
+  const [models, setModels] = useState<string[]>([])
+  const [model, setModel] = useState('')
+  const [connectionState, setConnectionState] = useState<'idle' | 'testing' | 'ready' | 'error'>('idle')
+  const [connectionMessage, setConnectionMessage] = useState('')
+
+  useEffect(() => {
+    let active = true
+    getOllamaProfiles(token).then((available) => {
+      if (active) {
+        setProfiles(available)
+        setProfile(available[0]?.id ?? '')
+        setProfilesState('ready')
+      }
+    }).catch(() => {
+      if (active) {
+        setConnectionState('error')
+        setProfilesState('error')
+        setConnectionMessage('Unable to load Ollama connections. Try refreshing the page.')
+      }
+    })
+    return () => { active = false }
+  }, [token])
+
+  async function checkConnection() {
+    setConnectionState('testing')
+    setModels([])
+    setModel('')
+    try {
+      const installed = await testOllamaConnection(profile, token)
+      setModels(installed)
+      setConnectionState('ready')
+      setConnectionMessage(installed.length ? 'Connection successful. Select an installed model.' : 'Connected, but no models are installed.')
+    } catch (error) {
+      setConnectionState('error')
+      setConnectionMessage(error instanceof Error ? error.message : 'Connection test failed.')
+    }
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -37,8 +78,19 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
       return
     }
 
+    if (profilesState !== 'ready') {
+      setSubmission({ state: 'error', message: 'Ollama connections are not ready. Refresh the page and try again.' })
+      return
+    }
+
+    if (profiles.length > 0 && (connectionState !== 'ready' || !model)) {
+      setSubmission({ state: 'error', message: 'Test the Ollama connection and select an installed model.' })
+      return
+    }
+
     setSubmission({ state: 'loading' })
-    createAnalysis({ language, sourceCode }, token)
+    createAnalysis({ language, sourceCode }, token,
+      profiles.length > 0 ? { profile, model } : undefined)
       .then((analysis) => setSubmission({ state: 'success', analysis }))
       .catch((error: unknown) => {
         if (error instanceof ApiError && error.status === 401) {
@@ -91,6 +143,30 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
           ))}
         </select>
 
+        {profilesState === 'loading' && <p role="status">Checking available connections…</p>}
+        {profiles.length === 0 && connectionState === 'error' &&
+          <p role="alert">{connectionMessage}</p>}
+        {profiles.length > 0 && <div className="ollama-selection">
+          <label htmlFor="ollama-profile">Ollama connection</label>
+          <select id="ollama-profile" value={profile} disabled={submission.state === 'loading'}
+            onChange={(event) => { setProfile(event.target.value); setModels([]); setModel(''); setConnectionState('idle'); setConnectionMessage('') }}>
+            {profiles.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}
+          </select>
+          <button type="button" className="secondary-button" onClick={checkConnection}
+            disabled={!profile || connectionState === 'testing' || submission.state === 'loading'}>
+            {connectionState === 'testing' ? 'Testing connection…' : 'Test Connection'}
+          </button>
+          {connectionMessage && <p role={connectionState === 'error' ? 'alert' : 'status'}>{connectionMessage}</p>}
+          {models.length > 0 && <>
+            <label htmlFor="ollama-model">Installed model</label>
+            <select id="ollama-model" value={model} disabled={submission.state === 'loading'}
+              onChange={(event) => setModel(event.target.value)}>
+              <option value="">Select a model</option>
+              {models.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </>}
+        </div>}
+
         <div className="editor-heading">
           <label htmlFor="source-code">Source code</label>
           <span>{sourceCode.length} characters</span>
@@ -108,7 +184,8 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
         />
 
         <div className="form-footer">
-          <button className="analyze-button" type="submit" disabled={submission.state === 'loading'}>
+          <button className="analyze-button" type="submit"
+            disabled={submission.state === 'loading' || profilesState !== 'ready'}>
             {submission.state === 'loading' && <span className="button-spinner" aria-hidden="true" />}
             {submission.state === 'loading' ? 'Analyzing…' : 'Analyze Code'}
           </button>
