@@ -3,6 +3,8 @@ package com.devlensai.backend.config;
 import com.devlensai.backend.ai.AiCodeReviewProvider;
 import com.devlensai.backend.ai.MockAiCodeReviewProvider;
 import com.devlensai.backend.ai.OpenAiCompatibleCodeReviewProvider;
+import com.devlensai.backend.ai.OllamaAiProvider;
+import com.devlensai.backend.ai.OllamaConnections;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -46,5 +48,17 @@ class AiProviderConfigTest {
         assertThatThrownBy(() -> config.aiCodeReviewProvider(
                 objectMapper, "openai-compatible", "", "https://example.com/v1/", "model", 30
         )).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void explicitOllamaNeverSelectsCloudEvenWhenCloudKeyIsConfigured() {
+        AiCodeReviewProvider provider = config.configuredAiCodeReviewProvider(
+                objectMapper, new OllamaConnections("local|Local|http://localhost:11434"),
+                "ollama", "synthetic-cloud-key", "https://example.com/v1/", "cloud-model", 30,
+                "local", "installed:latest", 3, 30, 2048, 8192
+        );
+
+        assertThat(provider).isInstanceOf(OllamaAiProvider.class);
+        assertThat(provider.providerName()).isEqualTo("ollama");
     }
 }

@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, test, vi } from 'vitest'
 import { AnalysisForm } from './AnalysisForm'
 import { analysis } from '../test/fixtures'
 import { getOllamaProfiles, testOllamaConnection } from '../services/ollamaApi'
+import { ApiError } from '../services/apiError'
 
 vi.mock('../services/ollamaApi', () => ({
   getOllamaProfiles: vi.fn().mockResolvedValue([]),
@@ -14,7 +15,11 @@ const fetchMock = vi.fn<typeof fetch>()
 vi.stubGlobal('fetch', fetchMock)
 
 describe('AnalysisForm', () => {
-  beforeEach(() => fetchMock.mockReset())
+  beforeEach(() => {
+    fetchMock.mockReset()
+    vi.mocked(getOllamaProfiles).mockReset().mockResolvedValue([])
+    vi.mocked(testOllamaConnection).mockReset()
+  })
 
   it('rejects blank source code before calling the API', async () => {
     render(<AnalysisForm token="test-token" onUnauthorized={vi.fn()} />)
@@ -93,5 +98,39 @@ describe('AnalysisForm', () => {
       'http://localhost:8080/api/analyses?ollamaProfile=lan&ollamaModel=installed%3Alatest',
       expect.objectContaining({ method: 'POST' }),
     )
+  })
+
+  test.each([
+    [400, 'selected Ollama model or connection is no longer available'],
+    [503, 'Ollama is unavailable'],
+    [504, 'Ollama timed out'],
+    [502, 'Ollama could not return a valid review'],
+  ])('shows actionable Ollama review recovery for HTTP %s', async (status, expected) => {
+    vi.mocked(getOllamaProfiles).mockResolvedValueOnce([{ id: 'local', displayName: 'This machine' }])
+    vi.mocked(testOllamaConnection).mockResolvedValueOnce(['installed:latest'])
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ message: 'technical detail' }), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    render(<AnalysisForm token="test-token" onUnauthorized={vi.fn()} />)
+
+    await screen.findByLabelText('Ollama connection')
+    await userEvent.click(screen.getByRole('button', { name: 'Test Connection' }))
+    await userEvent.selectOptions(await screen.findByLabelText('Installed model'), 'installed:latest')
+    fireEvent.change(screen.getByLabelText('Source code'), { target: { value: 'class Main {}' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Analyze Code' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(expected)
+  })
+
+  it('shows actionable recovery when the Ollama connection test is offline', async () => {
+    vi.mocked(getOllamaProfiles).mockResolvedValueOnce([{ id: 'lan', displayName: 'Trusted LAN' }])
+    vi.mocked(testOllamaConnection).mockRejectedValueOnce(new ApiError('backend detail', 503))
+    render(<AnalysisForm token="test-token" onUnauthorized={vi.fn()} />)
+
+    await screen.findByLabelText('Ollama connection')
+    await userEvent.click(screen.getByRole('button', { name: 'Test Connection' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Check that it is running on the selected trusted machine')
   })
 })

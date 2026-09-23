@@ -78,6 +78,29 @@ class AnalysisControllerTest {
     }
 
     @Test
+    void routesServerManagedOllamaSelectionWithoutChangingResponseShape() throws Exception {
+        when(analysisService.create(any(), any(CreateAnalysisRequest.class),
+                eq("trusted-lan"), eq("installed:latest")))
+                .thenReturn(response(3L, ProgrammingLanguage.JAVA));
+
+        mockMvc.perform(post("/api/analyses")
+                        .queryParam("ollamaProfile", "trusted-lan")
+                        .queryParam("ollamaModel", "installed:latest")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"language":"JAVA","sourceCode":"public class Main {}"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(3))
+                .andExpect(jsonPath("$.result.summary").value("Review summary"))
+                .andExpect(jsonPath("$.ollamaProfile").doesNotExist())
+                .andExpect(jsonPath("$.ollamaModel").doesNotExist());
+
+        verify(analysisService).create(any(), any(CreateAnalysisRequest.class),
+                eq("trusted-lan"), eq("installed:latest"));
+    }
+
+    @Test
     void rejectsBlankSourceCode() throws Exception {
         mockMvc.perform(post("/api/analyses")
                         .contentType(MediaType.APPLICATION_JSON)

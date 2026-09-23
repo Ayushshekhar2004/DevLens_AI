@@ -13,6 +13,7 @@ import com.devlensai.backend.entity.User;
 import com.devlensai.backend.entity.SecuritySeverity;
 import com.devlensai.backend.exception.AiProviderMalformedResponseException;
 import com.devlensai.backend.exception.AiProviderTimeoutException;
+import com.devlensai.backend.exception.AiProviderUnavailableException;
 import com.devlensai.backend.exception.AnalysisReviewFailedException;
 import com.devlensai.backend.exception.AnalysisNotFoundException;
 import com.devlensai.backend.exception.InvalidHistoryQueryException;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -106,6 +108,44 @@ class AnalysisServiceTest {
                 .hasMessageContaining("AI provider returned an invalid response");
 
         assertThat(savedStatuses).containsExactly(AnalysisStatus.PENDING, AnalysisStatus.FAILED);
+    }
+
+    @Test
+    void selectedOllamaResultFlowsIntoOwnerScopedHistory() {
+        User authenticatedUser = mock(User.class);
+        when(authenticatedUser.getId()).thenReturn(42L);
+        when(codeReviewService.review(ProgrammingLanguage.JAVA, "class Main {}", "local", "installed:latest"))
+                .thenReturn(result());
+
+        AnalysisResponse created = analysisService.create(authenticatedUser, request(), "local", "installed:latest");
+        ArgumentCaptor<Analysis> saved = ArgumentCaptor.forClass(Analysis.class);
+        verify(repository, times(2)).save(saved.capture());
+        Analysis stored = saved.getAllValues().getLast();
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenAnswer(invocation -> new PageImpl<>(List.of(stored), invocation.getArgument(1), 1));
+
+        var history = analysisService.findHistory(authenticatedUser, 0, 10, null, null, "newest");
+
+        assertThat(created.status()).isEqualTo(AnalysisStatus.COMPLETED);
+        assertThat(history.content()).singleElement().satisfies(item -> {
+            assertThat(item.result()).isEqualTo(result());
+            assertThat(item.status()).isEqualTo(AnalysisStatus.COMPLETED);
+        });
+        assertThat(stored.getUser()).isSameAs(authenticatedUser);
+        verify(codeReviewService, never()).review(ProgrammingLanguage.JAVA, "class Main {}");
+    }
+
+    @Test
+    void failedSelectedOllamaRequestDoesNotTryDefaultProvider() {
+        when(codeReviewService.review(ProgrammingLanguage.JAVA, "class Main {}", "local", "installed:latest"))
+                .thenThrow(new AiProviderUnavailableException("Ollama unavailable"));
+
+        assertThatThrownBy(() -> analysisService.create(user, request(), "local", "installed:latest"))
+                .isInstanceOf(AnalysisReviewFailedException.class)
+                .hasMessageContaining("saved as FAILED");
+
+        assertThat(savedStatuses).containsExactly(AnalysisStatus.PENDING, AnalysisStatus.FAILED);
+        verify(codeReviewService, never()).review(ProgrammingLanguage.JAVA, "class Main {}");
     }
 
     @Test

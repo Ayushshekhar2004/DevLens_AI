@@ -44,6 +44,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/analyses", "/api/analyses/**").authenticated()
                         .requestMatchers("/api/analytics/**").authenticated()
                         .requestMatchers("/api/ai/ollama/**").authenticated()
+                        .requestMatchers("/api/repositories/**").authenticated()
                         .anyRequest().permitAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) ->

@@ -18,6 +18,19 @@ type SubmissionState =
   | { state: 'success'; analysis: AnalysisResponse }
   | { state: 'error'; message: string }
 
+function localProviderError(error: unknown, action: 'review' | 'connection'): string {
+  if (error instanceof ApiError) {
+    if (error.status === 400) return 'The selected Ollama model or connection is no longer available. Test Connection again and choose an installed model.'
+    if (error.status === 503) return 'Ollama is unavailable. Check that it is running on the selected trusted machine, then retry Test Connection.'
+    if (error.status === 504) return 'Ollama timed out. Check the selected machine and try a smaller code sample or another installed model.'
+    if (error.status === 502) return action === 'review'
+      ? 'Ollama could not return a valid review. Try a smaller code sample or another installed model.'
+      : 'Ollama returned an invalid connection response. Check the selected instance and retry.'
+  }
+  return action === 'review' ? 'Unable to complete the Ollama review. Check the selected connection and try again.'
+    : 'Unable to test Ollama. Check the selected machine and try again.'
+}
+
 interface AnalysisFormProps {
   token: string
   onUnauthorized: () => void
@@ -28,6 +41,8 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
   const [sourceCode, setSourceCode] = useState('')
   const [submission, setSubmission] = useState<SubmissionState>({ state: 'idle' })
   const sourceCodeRef = useRef<HTMLTextAreaElement>(null)
+  const onUnauthorizedRef = useRef(onUnauthorized)
+  onUnauthorizedRef.current = onUnauthorized
   const [profiles, setProfiles] = useState<OllamaProfile[]>([])
   const [profilesState, setProfilesState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [profile, setProfile] = useState('')
@@ -38,17 +53,22 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
 
   useEffect(() => {
     let active = true
+    setProfilesState('loading')
+    setProfiles([])
+    setModels([])
+    setModel('')
     getOllamaProfiles(token).then((available) => {
       if (active) {
         setProfiles(available)
         setProfile(available[0]?.id ?? '')
         setProfilesState('ready')
       }
-    }).catch(() => {
+    }).catch((error: unknown) => {
       if (active) {
         setConnectionState('error')
         setProfilesState('error')
-        setConnectionMessage('Unable to load Ollama connections. Try refreshing the page.')
+        setConnectionMessage('Unable to load Ollama connections. Check the backend and refresh the page.')
+        if (error instanceof ApiError && error.status === 401) onUnauthorizedRef.current()
       }
     })
     return () => { active = false }
@@ -65,7 +85,8 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
       setConnectionMessage(installed.length ? 'Connection successful. Select an installed model.' : 'Connected, but no models are installed.')
     } catch (error) {
       setConnectionState('error')
-      setConnectionMessage(error instanceof Error ? error.message : 'Connection test failed.')
+      setConnectionMessage(localProviderError(error, 'connection'))
+      if (error instanceof ApiError && error.status === 401) onUnauthorized()
     }
   }
 
@@ -98,7 +119,9 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
           onUnauthorized()
           return
         }
-        const message = error instanceof Error ? error.message : 'Unable to submit your code.'
+        const message = profiles.length > 0
+          ? localProviderError(error, 'review')
+          : error instanceof Error ? error.message : 'Unable to submit your code.'
         setSubmission({ state: 'error', message })
       })
   }
@@ -148,7 +171,7 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
           <p role="alert">{connectionMessage}</p>}
         {profiles.length > 0 && <div className="ollama-selection">
           <label htmlFor="ollama-profile">Ollama connection</label>
-          <select id="ollama-profile" value={profile} disabled={submission.state === 'loading'}
+          <select id="ollama-profile" value={profile} disabled={submission.state === 'loading' || connectionState === 'testing'}
             onChange={(event) => { setProfile(event.target.value); setModels([]); setModel(''); setConnectionState('idle'); setConnectionMessage('') }}>
             {profiles.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}
           </select>

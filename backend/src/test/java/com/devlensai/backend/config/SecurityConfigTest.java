@@ -70,6 +70,14 @@ class SecurityConfigTest {
     }
 
     @Test
+    void rejectsRepositoryImportAndSnapshotAccessWithoutToken() throws Exception {
+        mockMvc.perform(post("/api/repositories/imports"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/repositories/snapshots/1"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void rejectsAnalysisRequestWithInvalidToken() throws Exception {
         when(jwtService.extractSubject("invalid-token"))
                 .thenThrow(new IllegalArgumentException("invalid token"));

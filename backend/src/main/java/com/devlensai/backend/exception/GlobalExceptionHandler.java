@@ -7,6 +7,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -38,6 +39,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AnalysisNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleNotFound(AnalysisNotFoundException exception) {
         return error(HttpStatus.NOT_FOUND, exception.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(RepositorySnapshotNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleRepositorySnapshotNotFound(
+            RepositorySnapshotNotFoundException exception
+    ) {
+        return error(HttpStatus.NOT_FOUND, exception.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(RepositoryImportException.class)
+    public ResponseEntity<ApiErrorResponse> handleRepositoryImport(RepositoryImportException exception) {
+        return error(HttpStatus.BAD_REQUEST, exception.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleRepositoryUploadTooLarge() {
+        return error(HttpStatus.PAYLOAD_TOO_LARGE, "Repository upload exceeds the configured size limit", Map.of());
     }
 
     @ExceptionHandler(AnalysisReviewFailedException.class)

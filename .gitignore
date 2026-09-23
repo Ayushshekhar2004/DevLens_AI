@@ -23,6 +23,7 @@ dist/
 *.iml
 .vscode/
 .DS_Store
+data/private/
 
 # Local environment files
 .env
