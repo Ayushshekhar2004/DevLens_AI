@@ -15,10 +15,11 @@ interface HomePageProps {
   onLogout: () => void
   onHistory: () => void
   onAnalytics: () => void
+  onRepositories: () => void
   onSessionExpired: () => void
 }
 
-export function HomePage({ session, onLogout, onHistory, onAnalytics, onSessionExpired }: HomePageProps) {
+export function HomePage({ session, onLogout, onHistory, onAnalytics, onRepositories, onSessionExpired }: HomePageProps) {
   const [request, setRequest] = useState<RequestState>({ state: 'loading' })
   const [requestNumber, setRequestNumber] = useState(0)
 
@@ -86,6 +87,7 @@ export function HomePage({ session, onLogout, onHistory, onAnalytics, onSessionE
           </div>
         </div>
         <div className="account-actions">
+          <button className="secondary-button" type="button" onClick={onRepositories}>Repositories</button>
           <button className="secondary-button" type="button" onClick={onAnalytics}>Analytics</button>
           <button className="secondary-button" type="button" onClick={onHistory}>History</button>
           <button className="secondary-button" type="button" onClick={onLogout}>Log out</button>

@@ -14,6 +14,7 @@ interface HistoryPageProps {
   session: AuthSession
   onDashboard: () => void
   onAnalytics: () => void
+  onRepositories?: () => void
   onLogout: () => void
   onSessionExpired: () => void
 }
@@ -23,7 +24,7 @@ type HistoryState =
   | { state: 'success'; history: AnalysisHistoryResponse }
   | { state: 'error'; message: string }
 
-export function HistoryPage({ session, onDashboard, onAnalytics, onLogout, onSessionExpired }: HistoryPageProps) {
+export function HistoryPage({ session, onDashboard, onAnalytics, onRepositories, onLogout, onSessionExpired }: HistoryPageProps) {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [language, setLanguage] = useState<ProgrammingLanguage | ''>('')
@@ -111,6 +112,7 @@ export function HistoryPage({ session, onDashboard, onAnalytics, onLogout, onSes
         <div className="history-header-actions">
           <button className="secondary-button" type="button" onClick={onDashboard}>New analysis</button>
           <button className="secondary-button" type="button" onClick={onAnalytics}>Analytics</button>
+          {onRepositories && <button className="secondary-button" type="button" onClick={onRepositories}>Repositories</button>}
           <button className="secondary-button" type="button" onClick={onLogout}>Log out</button>
         </div>
       </header>

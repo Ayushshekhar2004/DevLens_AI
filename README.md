@@ -16,7 +16,7 @@ Code reviews often need a first pass for possible bugs, edge cases, complexity, 
 - Browse personal history with server-side search, language filter, newest/oldest sorting, pagination, detail view, and confirmed deletion.
 - View metrics derived from stored records: total analyses, counts by language, recent analyses, generated test-case count, and security findings by severity.
 - Compare original and suggested code, with copy buttons for both. The editor and results include loading, error, and empty states.
-- Import bounded repository ZIP snapshots and run an owner-scoped, AI-free deterministic scan for stacks, modules, files, symbols, imports, dependency edges, and safe skip counts.
+- Import bounded repository ZIP snapshots, track queued/running/terminal scan jobs, and browse an owner-scoped, paginated AI-free inventory of stacks, modules, files, parser coverage, and safe skip counts.
 - Use a clearly labeled mock provider for local development, or configure an OpenAI-compatible chat-completions provider.
 
 The mock provider returns placeholder feedback, **not a real code review**. It deliberately leaves inferred expected output blank and does not report security findings.
@@ -73,6 +73,7 @@ Registration validates the request, normalizes the email, and persists a BCrypt 
 - `analyses`: ID, owning user, programming language, source code, status, creation time, scalar review fields, and optional failure reason.
 - JPA element-collection tables hold ordered potential bugs, edge cases, suggestions, generated test cases, and security findings. Test cases and findings are embedded values, not independently managed resources.
 - Repository snapshots are owner-scoped immutable file sets. Repository scans persist detected modules, file/language/hash/line metadata, parser status, heuristic symbols/imports, dependency edges, safe skip reasons, and redacted bounded text context.
+- Repository jobs persist import/scan lifecycle state (`QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`). Jobs interrupted by a restart are failed with retry guidance instead of remaining active indefinitely.
 
 Flyway applies additive repository-scanner migrations and baselines pre-existing local schemas at version 0. Hibernate remains on `ddl-auto=update` for the older v1 tables; a complete production baseline migration is still future work.
 
@@ -89,6 +90,13 @@ Flyway applies additive repository-scanner migrations and baselines pre-existing
 | GET | `/api/analyses/history` | Paginated, searchable history | Yes |
 | DELETE | `/api/analyses/{id}` | Delete own analysis (`204`) | Yes |
 | GET | `/api/analytics/overview` | Owner-scoped metrics | Yes |
+| POST | `/api/repositories/import-jobs` | Import a ZIP and queue its deterministic scan (`multipart/form-data`, field `file`) | Yes |
+| GET | `/api/repositories/jobs/{id}` | Poll an owned import/scan job | Yes |
+| POST | `/api/repositories/jobs/{id}/cancel` | Request cancellation of an owned active job | Yes |
+| GET | `/api/repositories/inventory` | Paginated snapshot summaries; `page`, `size` (maximum 50) | Yes |
+| GET | `/api/repositories/snapshots/{id}/inventory` | Paginated files, modules, stack, coverage, and skip counts without source bodies | Yes |
+| POST | `/api/repositories/snapshots/{id}/scan-jobs` | Queue or reuse an owned scan job | Yes |
+| DELETE | `/api/repositories/snapshots/{id}` | Delete an owned snapshot, scan metadata, jobs, and private files | Yes |
 | POST | `/api/repositories/imports` | Import a bounded ZIP snapshot (`multipart/form-data`, field `file`) | Yes |
 | GET | `/api/repositories/snapshots/{id}` | Read own snapshot metadata and content hashes | Yes |
 | POST | `/api/repositories/snapshots/{id}/scan` | Deterministically scan an owned snapshot (`201`) | Yes |
@@ -161,6 +169,11 @@ Never commit populated `.env` files. The root `.env.example` is for Compose; `ba
 | `REPOSITORY_STORAGE_ROOT`, `REPOSITORY_ALLOWED_FOLDER_ROOT` | Private snapshot storage and trusted folder-import boundary |
 | `REPOSITORY_MAX_*` | Upload, expansion, file, count, depth, ratio, and elapsed-time bounds |
 | `REPOSITORY_SCAN_MAX_*` | Scanner text/manifest byte and per-file symbol/import bounds |
+| `REPOSITORY_WORKER_COUNT`, `REPOSITORY_QUEUE_CAPACITY` | Bounded in-process repository scan workers and waiting jobs |
+| `REPOSITORY_RETENTION_DAYS` | Snapshot lifecycle retention in days; `0` disables automatic deletion |
+| `REPOSITORY_CLEANUP_INTERVAL_HOURS` | Interval for applying the retention policy |
+
+Repository lifecycle cleanup deletes the snapshot, scan metadata, job rows, and private snapshot files together. Future derived artifacts must remain snapshot-owned so the same deletion boundary applies. Temporary import directories are removed after success or failure. Retention is disabled by default to avoid unexpected data loss; administrators can opt in with `REPOSITORY_RETENTION_DAYS`.
 
 `VITE_API_BASE_URL` is embedded in frontend assets at build time; do not put secrets in any `VITE_*` variable. A real provider is optional; a configured key can cause submitted source text to be sent to that external service.
 

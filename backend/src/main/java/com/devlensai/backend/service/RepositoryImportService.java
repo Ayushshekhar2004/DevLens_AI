@@ -86,6 +86,12 @@ public class RepositoryImportService {
                 .orElseThrow(() -> new RepositorySnapshotNotFoundException(id));
     }
 
+    public void deleteStorage(String storageKey) {
+        if (storageKey == null || !storageKey.matches("[0-9a-fA-F-]{36}")) return;
+        Path target = properties.storageRoot().resolve(storageKey).normalize();
+        if (target.startsWith(properties.storageRoot())) deleteTreeQuietly(target);
+    }
+
     private RepositorySnapshotResponse createSnapshot(User user, String sourceName, ImportOperation operation) {
         String storageKey = UUID.randomUUID().toString();
         Path staging = properties.storageRoot().resolve(".staging-" + storageKey);

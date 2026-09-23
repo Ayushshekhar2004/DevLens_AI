@@ -8,6 +8,7 @@ interface AnalyticsPageProps {
   session: AuthSession
   onDashboard: () => void
   onHistory: () => void
+  onRepositories?: () => void
   onLogout: () => void
   onSessionExpired: () => void
 }
@@ -28,6 +29,7 @@ export function AnalyticsPage({
   session,
   onDashboard,
   onHistory,
+  onRepositories,
   onLogout,
   onSessionExpired,
 }: AnalyticsPageProps) {
@@ -70,6 +72,7 @@ export function AnalyticsPage({
         <div className="history-header-actions">
           <button className="secondary-button" type="button" onClick={onDashboard}>New analysis</button>
           <button className="secondary-button" type="button" onClick={onHistory}>History</button>
+          {onRepositories && <button className="secondary-button" type="button" onClick={onRepositories}>Repositories</button>}
           <button className="secondary-button" type="button" onClick={onLogout}>Log out</button>
         </div>
       </header>

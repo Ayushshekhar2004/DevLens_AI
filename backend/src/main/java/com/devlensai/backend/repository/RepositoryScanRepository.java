@@ -7,4 +7,5 @@ import java.util.Optional;
 
 public interface RepositoryScanRepository extends JpaRepository<RepositoryScan, Long> {
     Optional<RepositoryScan> findBySnapshotIdAndUserId(Long snapshotId, Long userId);
+    void deleteBySnapshotId(Long snapshotId);
 }

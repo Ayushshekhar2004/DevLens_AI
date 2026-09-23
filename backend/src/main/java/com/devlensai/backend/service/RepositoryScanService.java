@@ -29,6 +29,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.function.BooleanSupplier;
 
 @Service
 public class RepositoryScanService {
@@ -71,10 +72,15 @@ public class RepositoryScanService {
 
     @Transactional
     public RepositoryScanResponse scanOwned(User user, Long snapshotId) {
+        return scanOwned(user, snapshotId, () -> false);
+    }
+
+    @Transactional
+    public RepositoryScanResponse scanOwned(User user, Long snapshotId, BooleanSupplier cancelled) {
         RepositorySnapshot snapshot = ownedSnapshot(user, snapshotId);
         Optional<RepositoryScan> existing = scanRepository.findBySnapshotIdAndUserId(snapshotId, user.getId());
         if (existing.isPresent()) return RepositoryScanResponse.from(existing.get());
-        RepositoryScan scan = buildScan(snapshot, user);
+        RepositoryScan scan = buildScan(snapshot, user, cancelled);
         try {
             return RepositoryScanResponse.from(scanRepository.save(scan));
         } catch (DataIntegrityViolationException race) {
@@ -96,11 +102,12 @@ public class RepositoryScanService {
                 .orElseThrow(() -> new RepositorySnapshotNotFoundException(snapshotId));
     }
 
-    private RepositoryScan buildScan(RepositorySnapshot snapshot, User user) {
+    private RepositoryScan buildScan(RepositorySnapshot snapshot, User user, BooleanSupplier cancelled) {
         Path contentRoot = importProperties.storageRoot().resolve(snapshot.getStorageKey()).resolve("content").normalize();
         List<Candidate> candidates = new ArrayList<>();
         for (RepositorySnapshotFile metadata : snapshot.getFiles().stream()
                 .sorted(Comparator.comparing(RepositorySnapshotFile::getRelativePath)).toList()) {
+            ensureNotCancelled(cancelled);
             candidates.add(readCandidate(contentRoot, metadata));
         }
         List<IgnoreRule> ignoreRules = parseIgnoreRules(candidates);
@@ -110,6 +117,7 @@ public class RepositoryScanService {
         List<RepositorySkipRecord> skips = new ArrayList<>();
         List<Candidate> eligible = new ArrayList<>();
         for (Candidate candidate : candidates) {
+            ensureNotCancelled(cancelled);
             String hardReason = hardExclusion(candidate.path());
             if (hardReason != null) skips.add(new RepositorySkipRecord(candidate.path(), hardReason));
             else if (isIgnored(candidate.path(), ignoreRules)) skips.add(new RepositorySkipRecord(candidate.path(), "IGNORE_RULE"));
@@ -127,6 +135,7 @@ public class RepositoryScanService {
         boolean partial = moduleResult.partial();
 
         for (Candidate candidate : eligible) {
+            ensureNotCancelled(cancelled);
             String language = language(candidate.path());
             if (candidate.oversized()) {
                 files.add(file(candidate, language, "PARTIAL", "NONE", moduleRoot(candidate.path(), moduleResult.modules()), null));
@@ -448,6 +457,12 @@ public class RepositoryScanService {
     private String sha256(byte[] content) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content)); }
         catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
+    }
+
+    private void ensureNotCancelled(BooleanSupplier cancelled) {
+        if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
+            throw new RepositoryScanException("Repository scan was cancelled");
+        }
     }
 
     private String fileName(String path) { int slash = path.lastIndexOf('/'); return slash < 0 ? path : path.substring(slash + 1); }

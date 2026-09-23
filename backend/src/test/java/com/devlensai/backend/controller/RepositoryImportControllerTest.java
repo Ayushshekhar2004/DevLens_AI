@@ -6,6 +6,7 @@ import com.devlensai.backend.repository.UserRepository;
 import com.devlensai.backend.service.JwtService;
 import com.devlensai.backend.service.RepositoryImportService;
 import com.devlensai.backend.service.RepositoryScanService;
+import com.devlensai.backend.service.RepositoryLifecycleService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -32,6 +33,7 @@ class RepositoryImportControllerTest {
     @Autowired MockMvc mockMvc;
     @MockitoBean RepositoryImportService importService;
     @MockitoBean RepositoryScanService scanService;
+    @MockitoBean RepositoryLifecycleService lifecycleService;
     @MockitoBean JwtService jwtService;
     @MockitoBean UserRepository userRepository;
 

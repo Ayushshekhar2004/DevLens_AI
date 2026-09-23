@@ -1,0 +1,1 @@
+{"dependencies":{"react":"fixture-only"},"scripts":{"postinstall":"fixture-must-never-run"}}

@@ -159,3 +159,51 @@
 - Ignore matching covers the documented nested path, wildcard, directory, anchoring, and negation behavior used by DevLens fixtures, but does not claim every platform-specific edge case of Git's native implementation.
 - Parser bounds can produce a `PARTIAL` file record with no persisted context. Unsupported files retain path/hash metadata only. The scanner never attempts to execute or repair them.
 - Flyway currently owns only new scanner tables. Older v1 tables remain under the pre-existing Hibernate update convention; production deployment still needs a complete reviewed baseline migration and live PostgreSQL migration rehearsal.
+
+## v1.2 Step 05 — private repository inventory and lifecycle
+
+### Changed files and purposes
+
+- `RepositoryJob`, `RepositoryJobType`, `RepositoryJobStatus`, `RepositoryJobRepository`, and `V2__add_repository_lifecycle_jobs.sql` add durable owner/snapshot-scoped import and scan job state with optimistic versioning and lookup indexes.
+- `RepositoryJobStateService` owns short, isolated job-state transactions, owner checks, cancellation flags, duplicate active/completed scan lookup, and startup recovery that changes stale `QUEUED`/`RUNNING` jobs to `FAILED` with retry guidance.
+- `RepositoryLifecycleConfig` and `RepositoryLifecycleProperties` configure a bounded in-process executor and retention schedule. `RepositoryLifecycleService` coordinates synchronous bounded ZIP ingestion, asynchronous bounded scanning, polling, cooperative cancellation, pagination, inventory projection, deletion, and retention without messaging infrastructure.
+- `RepositoryImportController`, `RepositoryImportLifecycleResponse`, `RepositoryJobResponse`, and `RepositoryInventoryResponse` expose authenticated lifecycle endpoints. Inventory responses contain snapshot identity, stack/modules, counts, safe aggregated skip reasons, parser coverage, and paginated file metadata; they omit source bodies, private storage keys, absolute paths, and secrets. The older v1.2 import/scan endpoints remain compatible.
+- `RepositorySnapshotRepository`, `RepositoryScanRepository`, `RepositoryImportService`, and `RepositoryScanService` add owner pagination, retention lookup, cascade coordination, private-storage cleanup, and cooperative scan cancellation while preserving the existing deterministic scanner behavior.
+- `application.properties`, root/backend `.env.example`, `docker-compose.yml`, and `README.md` document bounded worker/queue settings, retention, cleanup frequency, lifecycle APIs, and the deletion boundary.
+- `RepositoriesPage`, `repositoryApi`, and repository frontend types provide authenticated ZIP import, scan polling/cancellation, paginated inventory/detail, stack/modules/counts/skip reasons/parser coverage/errors, and confirmed deletion. `App`, `HomePage`, `HistoryPage`, `AnalyticsPage`, and `styles.css` add consistent navigation and responsive presentation without a new UI dependency.
+- `RepositoryLifecycleApiTest`, updated repository/security/controller/migration tests, and the inert `repository-fixtures/mixed-project` data cover the lifecycle, authorization, migration, recovery, and safety requirements. `RepositoriesPage.test.tsx` covers import validation/completion/deletion plus metadata rendering with no source body.
+
+### Lifecycle and retention behavior
+
+- Import records move through durable `QUEUED` to `RUNNING`, then `COMPLETED` or `FAILED`; a successful import queues a scan. Scans run only in the configured local bounded executor and move through the same terminal states, including `CANCELLED`. Cancellation sets a persisted flag, interrupts the local future where available, and is checked cooperatively by the scanner.
+- A repeated scan request for a snapshot reuses its active or completed scan job, preventing concurrent duplicate scans in the existing single backend process. Re-uploading the same ZIP deliberately creates another immutable snapshot, giving duplicate submissions deterministic separate identities rather than silently overwriting data.
+- On application startup, jobs left active by a restart are marked failed and can be retried. Queue rejection is terminal with actionable retry text, so work is not left indefinitely running.
+- Owner-checked deletion cancels local work and deletes job rows, scan metadata, the snapshot row, and private snapshot storage. `REPOSITORY_RETENTION_DAYS=0` disables automatic deletion; a positive value applies the same deletion boundary on `REPOSITORY_CLEANUP_INTERVAL_HOURS`. Old failed import jobs without snapshots are also removed. Future derived artifacts must be snapshot-owned/cascaded or explicitly added to this boundary.
+- Temporary import paths retain the Step 03 cleanup guarantees on success, validation failure, cancellation/interruption, and runtime failure. Import and inventory have no AI/provider dependency and work while providers are disabled.
+
+### Configuration and migration
+
+- Added `REPOSITORY_WORKER_COUNT` (default `2`, accepted `1..8`), `REPOSITORY_QUEUE_CAPACITY` (default `20`, accepted `1..1000`), `REPOSITORY_RETENTION_DAYS` (default `0`, non-negative), and `REPOSITORY_CLEANUP_INTERVAL_HOURS` (default `24`, positive).
+- Flyway migration `V2__add_repository_lifecycle_jobs.sql` creates `repository_jobs` and owner/created plus snapshot/type indexes. It follows the existing scanner-only additive migration boundary; Hibernate still supplies relationships to older v1-managed tables under the documented local `ddl-auto=update` convention.
+
+### Acceptance evidence
+
+- `mvn -q -Dtest=RepositoryLifecycleApiTest test`: **1 integration scenario passed** after correcting the snapshot-deletion transaction boundary. It authenticates two users, rejects unauthenticated import, rejects invalid and oversized uploads, cancels queued work, imports/scans fixture ZIPs, polls terminal state, reuses a duplicate scan request, paginates, checks cross-owner job/detail/delete denial, verifies sensitive/excluded data absence, deletes, and asserts database/private-storage cleanup.
+- `mvn -q test -DargLine=-javaagent:/Users/ayushshekharsingh/.m2/repository/net/bytebuddy/byte-buddy-agent/1.18.11/byte-buddy-agent-1.18.11.jar`: **91 backend tests passed**, zero failures/errors/skips across 19 test classes. The first sandboxed run failed only because pre-existing AI HTTP-stub tests could not bind localhost; the approved localhost-only rerun passed. Existing analysis creation, history/ownership, provider, authentication, analytics, importer, and scanner coverage remains green.
+- `npm test -- --run`: **24 frontend tests passed** across 7 files, including repository inventory/import actions and existing authentication, analysis, result, history, and analytics interactions.
+- `npm run build`: passed; TypeScript and Vite production build completed with 43 modules transformed. `mvn -q -DskipTests package`, `docker compose config --quiet`, and `git diff --check` passed.
+- Live terminal/API smoke used the existing local PostgreSQL server with an isolated temporary database and port `18080`: register `201`, login `200`, unauthenticated inventory `401`, fixture import `201`, scan `COMPLETED`, inventory/detail `200`, excluded secret/path/source-field check passed, delete `204`, deleted lookup `404`, database snapshot/scan/snapshot-job counts all zero, and private storage empty. Flyway V1 and V2 plus Hibernate mappings started successfully against PostgreSQL 18.6. The temporary database and smoke directory (including synthetic token/response files) were removed afterward; the normal `devlens` database was not modified.
+- Synthetic acceptance fixtures are data only. No fixture build script, package hook, test, macro, or tool was invoked. Static inspection found no AI invocation, network fetch, package installation, process execution, or imported-code execution in the import/inventory flow.
+- No browser, screenshot, screen recording, or desktop automation was used. Visual checks for responsive layout, focus appearance, file-picker presentation, long names/skip labels, and live polling transitions remain explicitly unverified.
+
+### Limitations and risks
+
+- In-process scan jobs are durable as state but are not resumed after restart; interrupted jobs fail clearly and require an explicit retry. This avoids pretending exactly-once execution without messaging infrastructure.
+- Cancellation is cooperative and may arrive after a fast scan already completed. ZIP upload/import remains synchronous and bounded because an HTTP multipart stream cannot safely survive beyond its request; cancellation is useful for queued/running scan work.
+- Duplicate ZIP submissions intentionally produce separate immutable snapshots; duplicate scan requests for one snapshot are coalesced in the existing process. Multi-instance global scan locking is outside this single-process scope.
+- Inventory exposes bounded metadata only. Full symbol/import/dependency detail remains available through the preserved scanner contract, not duplicated into this page. Source bodies remain private and are not returned by default.
+- Secret filtering and safe skip aggregation reduce accidental exposure but cannot guarantee detection of every secret. Docker Desktop was not running, so Compose service startup was not repeated; Compose configuration validation passed and the required live workflow was instead verified against the existing host PostgreSQL service.
+
+### Verification status
+
+- **v1.2 Step 05 acceptance checks are complete. v1.2 is marked complete.** The only deferred check is manual visual review, recorded above as unverified rather than performed with a browser.
