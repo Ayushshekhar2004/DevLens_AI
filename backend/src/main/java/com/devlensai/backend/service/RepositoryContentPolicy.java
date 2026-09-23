@@ -29,7 +29,7 @@ public class RepositoryContentPolicy {
             "pom.xml", "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
             "requirements.txt", "pyproject.toml", "poetry.lock", "cargo.toml", "cargo.lock",
             "go.mod", "go.sum", "build.gradle", "build.gradle.kts", "settings.gradle",
-            "settings.gradle.kts", "makefile", "cmakelists.txt", "dockerfile", ".gitignore"
+            "settings.gradle.kts", "makefile", "cmakelists.txt", "dockerfile", ".gitignore", ".devlensignore"
     );
 
     public Decision decide(Path relativePath) {

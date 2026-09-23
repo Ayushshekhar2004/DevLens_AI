@@ -1,8 +1,10 @@
 package com.devlensai.backend.controller;
 
 import com.devlensai.backend.dto.RepositorySnapshotResponse;
+import com.devlensai.backend.dto.RepositoryScanResponse;
 import com.devlensai.backend.entity.User;
 import com.devlensai.backend.service.RepositoryImportService;
+import com.devlensai.backend.service.RepositoryScanService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,9 +20,11 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api/repositories")
 public class RepositoryImportController {
     private final RepositoryImportService importService;
+    private final RepositoryScanService scanService;
 
-    public RepositoryImportController(RepositoryImportService importService) {
+    public RepositoryImportController(RepositoryImportService importService, RepositoryScanService scanService) {
         this.importService = importService;
+        this.scanService = scanService;
     }
 
     @PostMapping(path = "/imports", consumes = "multipart/form-data")
@@ -38,5 +42,16 @@ public class RepositoryImportController {
             @PathVariable Long id
     ) {
         return importService.findOwned(user, id);
+    }
+
+    @PostMapping("/snapshots/{id}/scan")
+    @ResponseStatus(HttpStatus.CREATED)
+    public RepositoryScanResponse scanSnapshot(@AuthenticationPrincipal User user, @PathVariable Long id) {
+        return scanService.scanOwned(user, id);
+    }
+
+    @GetMapping("/snapshots/{id}/scan")
+    public RepositoryScanResponse findScan(@AuthenticationPrincipal User user, @PathVariable Long id) {
+        return scanService.findOwned(user, id);
     }
 }

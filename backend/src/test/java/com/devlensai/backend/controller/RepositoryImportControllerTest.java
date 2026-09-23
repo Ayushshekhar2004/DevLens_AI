@@ -1,9 +1,11 @@
 package com.devlensai.backend.controller;
 
 import com.devlensai.backend.dto.RepositorySnapshotResponse;
+import com.devlensai.backend.dto.RepositoryScanResponse;
 import com.devlensai.backend.repository.UserRepository;
 import com.devlensai.backend.service.JwtService;
 import com.devlensai.backend.service.RepositoryImportService;
+import com.devlensai.backend.service.RepositoryScanService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -29,6 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class RepositoryImportControllerTest {
     @Autowired MockMvc mockMvc;
     @MockitoBean RepositoryImportService importService;
+    @MockitoBean RepositoryScanService scanService;
     @MockitoBean JwtService jwtService;
     @MockitoBean UserRepository userRepository;
 
@@ -58,6 +61,26 @@ class RepositoryImportControllerTest {
                 .andExpect(jsonPath("$.id").value(4));
 
         verify(importService).findOwned(any(), eq(4L));
+    }
+
+    @Test
+    void startsAndReadsOwnerScopedSnapshotScan() throws Exception {
+        RepositoryScanResponse scan = new RepositoryScanResponse(8L, 4L, "lexical-v1", "COMPLETED", "Java",
+                Instant.parse("2026-09-23T12:00:00Z"), 0, java.util.Map.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of());
+        when(scanService.scanOwned(any(), eq(4L))).thenReturn(scan);
+        when(scanService.findOwned(any(), eq(4L))).thenReturn(scan);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/repositories/snapshots/4/scan"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.parserVersion").value("lexical-v1"));
+        mockMvc.perform(get("/api/repositories/snapshots/4/scan"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshotId").value(4));
+
+        verify(scanService).scanOwned(any(), eq(4L));
+        verify(scanService).findOwned(any(), eq(4L));
     }
 
     private RepositorySnapshotResponse response() {

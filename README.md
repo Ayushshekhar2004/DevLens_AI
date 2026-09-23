@@ -16,6 +16,7 @@ Code reviews often need a first pass for possible bugs, edge cases, complexity, 
 - Browse personal history with server-side search, language filter, newest/oldest sorting, pagination, detail view, and confirmed deletion.
 - View metrics derived from stored records: total analyses, counts by language, recent analyses, generated test-case count, and security findings by severity.
 - Compare original and suggested code, with copy buttons for both. The editor and results include loading, error, and empty states.
+- Import bounded repository ZIP snapshots and run an owner-scoped, AI-free deterministic scan for stacks, modules, files, symbols, imports, dependency edges, and safe skip counts.
 - Use a clearly labeled mock provider for local development, or configure an OpenAI-compatible chat-completions provider.
 
 The mock provider returns placeholder feedback, **not a real code review**. It deliberately leaves inferred expected output blank and does not report security findings.
@@ -71,8 +72,9 @@ Registration validates the request, normalizes the email, and persists a BCrypt 
 - `users`: ID, name, unique email, BCrypt password hash, creation time.
 - `analyses`: ID, owning user, programming language, source code, status, creation time, scalar review fields, and optional failure reason.
 - JPA element-collection tables hold ordered potential bugs, edge cases, suggestions, generated test cases, and security findings. Test cases and findings are embedded values, not independently managed resources.
+- Repository snapshots are owner-scoped immutable file sets. Repository scans persist detected modules, file/language/hash/line metadata, parser status, heuristic symbols/imports, dependency edges, safe skip reasons, and redacted bounded text context.
 
-Hibernate currently uses `ddl-auto=update` for local development. No migration framework or production migration plan is included.
+Flyway applies additive repository-scanner migrations and baselines pre-existing local schemas at version 0. Hibernate remains on `ddl-auto=update` for the older v1 tables; a complete production baseline migration is still future work.
 
 ## Important API endpoints
 
@@ -89,6 +91,8 @@ Hibernate currently uses `ddl-auto=update` for local development. No migration f
 | GET | `/api/analytics/overview` | Owner-scoped metrics | Yes |
 | POST | `/api/repositories/imports` | Import a bounded ZIP snapshot (`multipart/form-data`, field `file`) | Yes |
 | GET | `/api/repositories/snapshots/{id}` | Read own snapshot metadata and content hashes | Yes |
+| POST | `/api/repositories/snapshots/{id}/scan` | Deterministically scan an owned snapshot (`201`) | Yes |
+| GET | `/api/repositories/snapshots/{id}/scan` | Read owner-scoped scan metadata | Yes |
 
 History supports `page` (zero-based), `size` (1–100, default 20), `search` (source code or result summary), `language` (`JAVA`, `PYTHON`, `JAVASCRIPT`, `CPP`), and `sort` (`newest` or `oldest`). Missing/invalid credentials return `401`; validation errors return `400`; missing or unowned analyses return `404`.
 
@@ -156,6 +160,7 @@ Never commit populated `.env` files. The root `.env.example` is for Compose; `ba
 | `SERVER_PORT`, `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT` | Runtime/container host ports as applicable |
 | `REPOSITORY_STORAGE_ROOT`, `REPOSITORY_ALLOWED_FOLDER_ROOT` | Private snapshot storage and trusted folder-import boundary |
 | `REPOSITORY_MAX_*` | Upload, expansion, file, count, depth, ratio, and elapsed-time bounds |
+| `REPOSITORY_SCAN_MAX_*` | Scanner text/manifest byte and per-file symbol/import bounds |
 
 `VITE_API_BASE_URL` is embedded in frontend assets at build time; do not put secrets in any `VITE_*` variable. A real provider is optional; a configured key can cause submitted source text to be sent to that external service.
 
@@ -193,6 +198,14 @@ cd backend && mvn spring-boot:run
 
 The source is read without following symlinks and is never modified. Disable the CLI flag after the one-shot import. In Docker, the allowed root must be explicitly mounted/configured by the administrator; DevLens does not add an arbitrary host-folder mount.
 
+### Deterministic repository scanning
+
+Scanning is AI-free and reads only an accepted immutable snapshot. It detects Java/Maven/Gradle and JavaScript/TypeScript/React layouts conservatively, records SQL/config metadata, and extracts imports and symbols with explicitly labeled bounded heuristics. It never invokes a compiler, build tool, package manager, repository script, dependency resolver, AI provider, or network fetch. Unsupported files and malformed manifests are recorded as `UNSUPPORTED` or `PARTIAL` instead of aborting the scan.
+
+Mandatory security exclusions always win. Remaining paths use nested `.gitignore` rules followed by `.devlensignore` rules at the same directory; supported `!` negations can restore an ordinarily ignored file but cannot restore VCS/vendor/build/cache content, archives, lock files, or generated/minified files. Ignore files are parsed as bounded untrusted data and are not stored as analysis context. Skip metadata contains only paths and safe reason codes, never excluded contents.
+
+Eligible UTF-8 text is checked for likely secrets before its redacted form is persisted as future model context. Private-key material is excluded when safe redaction is uncertain. This filtering reduces accidental exposure risk but cannot guarantee discovery of every credential or sensitive value.
+
 ## Testing
 
 ```bash
@@ -208,7 +221,7 @@ Backend tests cover validation, authentication, ownership, controller responses,
 - Passwords are BCrypt-hashed; JWT, database, and provider secrets come from environment variables. Tokens are stored in per-tab `sessionStorage`, which limits persistence but remains accessible to JavaScript if an XSS vulnerability exists.
 - Owner-scoped queries limit access to saved analyses. The app does not execute submitted code.
 - AI bug, complexity, test, and security suggestions are **advisory**. Generated expected outputs may be uncertain; security findings can be false positives or miss vulnerabilities. Use human review, tests, static analysis, and professional audit where appropriate.
-- Docker configuration is intended for local use, not production hardening. Use HTTPS, managed secrets, database backups, and a proper migration strategy before any public deployment.
+- Docker configuration is intended for local use, not production hardening. Use HTTPS, managed secrets, database backups, and a complete production migration baseline before any public deployment.
 
 ## Known limitations
 
@@ -217,8 +230,8 @@ Backend tests cover validation, authentication, ownership, controller responses,
 - There is no submitted-code execution, generated-test execution, static-analysis engine, or malware analysis.
 - `GET /api/analyses` is unpaginated; the History endpoint is paginated.
 - Authentication has no refresh-token, password-reset, email-verification, or account-recovery flow.
-- Local schema evolution relies on Hibernate `update`; production migrations, deployment hardening, and full end-to-end browser coverage are not implemented.
+- Older v1 schema evolution still relies on Hibernate `update`; Flyway currently owns only additive repository scanner tables. Deployment hardening and full end-to-end browser coverage are not implemented.
 
 ## Future roadmap
 
-Potential next steps—not current features—include database migrations, asynchronous review jobs, stronger automated browser/accessibility testing, account recovery, and deployment hardening. Any code-execution or test-runner capability would require a separate sandbox design and security review.
+Potential next steps—not current features—include a complete migration baseline for older tables, asynchronous review jobs, stronger automated browser/accessibility testing, account recovery, and deployment hardening. Any code-execution or test-runner capability would require a separate sandbox design and security review.

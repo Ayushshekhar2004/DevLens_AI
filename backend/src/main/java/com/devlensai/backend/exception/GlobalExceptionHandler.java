@@ -53,6 +53,11 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, exception.getMessage(), Map.of());
     }
 
+    @ExceptionHandler(RepositoryScanException.class)
+    public ResponseEntity<ApiErrorResponse> handleRepositoryScan(RepositoryScanException exception) {
+        return error(HttpStatus.BAD_REQUEST, exception.getMessage(), Map.of());
+    }
+
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiErrorResponse> handleRepositoryUploadTooLarge() {
         return error(HttpStatus.PAYLOAD_TOO_LARGE, "Repository upload exceeds the configured size limit", Map.of());
