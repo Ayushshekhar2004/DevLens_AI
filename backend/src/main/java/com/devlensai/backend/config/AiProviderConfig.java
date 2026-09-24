@@ -38,8 +38,9 @@ public class AiProviderConfig {
     ) {
         if ("ollama".equalsIgnoreCase(provider.trim())) {
             if (connectTimeoutSeconds < 1 || connectTimeoutSeconds > 60
-                    || readTimeoutSeconds < 1 || readTimeoutSeconds > 600) {
-                throw new IllegalArgumentException("Invalid Ollama timeout configuration");
+                    || readTimeoutSeconds < 1 || readTimeoutSeconds > 600
+                    || ollamaModel == null || ollamaModel.isBlank()) {
+                throw new IllegalArgumentException("Invalid Ollama provider configuration");
             }
             return new OllamaAiProvider(objectMapper, connections, ollamaProfile, ollamaModel,
                     Duration.ofSeconds(connectTimeoutSeconds), Duration.ofSeconds(readTimeoutSeconds),

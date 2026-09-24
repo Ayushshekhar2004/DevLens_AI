@@ -17,6 +17,7 @@ Code reviews often need a first pass for possible bugs, edge cases, complexity, 
 - View metrics derived from stored records: total analyses, counts by language, recent analyses, generated test-case count, and security findings by severity.
 - Compare original and suggested code, with copy buttons for both. The editor and results include loading, error, and empty states.
 - Import bounded repository ZIP snapshots, track queued/running/terminal scan jobs, and browse an owner-scoped, paginated AI-free inventory of stacks, modules, files, parser coverage, and safe skip counts.
+- Queue bounded repository review jobs against an explicitly selected installed Ollama model. Repository source is chunked with file/hash/line provenance and never falls back to the snippet cloud provider.
 - Use a clearly labeled mock provider for local development, or configure an OpenAI-compatible chat-completions provider.
 
 The mock provider returns placeholder feedback, **not a real code review**. It deliberately leaves inferred expected output blank and does not report security findings.
@@ -40,9 +41,11 @@ Browser
   └─ React UI ── HTTP /api + Bearer JWT ──> Spring Boot API
                                           ├─ Auth / analysis / analytics services
                                           ├─ JPA repositories ──> PostgreSQL
-                                          └─ CodeReviewService ──> AI provider interface
+                                          ├─ CodeReviewService ──> AI provider interface
                                                                    ├─ mock
                                                                    └─ OpenAI-compatible API
+                                          └─ RepositoryAnalysisOrchestrator
+                                               └─ local-only Ollama adapter (no cloud fallback)
 ```
 
 In Docker, Nginx serves the built frontend and proxies `/api` to the `backend` service. The backend reaches PostgreSQL through the Compose service name `db`. In non-Docker development, Vite runs on port 5173 and calls the backend on port 8080 using `VITE_API_BASE_URL` and configured CORS.
@@ -74,6 +77,7 @@ Registration validates the request, normalizes the email, and persists a BCrypt 
 - JPA element-collection tables hold ordered potential bugs, edge cases, suggestions, generated test cases, and security findings. Test cases and findings are embedded values, not independently managed resources.
 - Repository snapshots are owner-scoped immutable file sets. Repository scans persist detected modules, file/language/hash/line metadata, parser status, heuristic symbols/imports, dependency edges, safe skip reasons, and redacted bounded text context.
 - Repository jobs persist import/scan lifecycle state (`QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`). Jobs interrupted by a restart are failed with retry guidance instead of remaining active indefinitely.
+- Repository analysis jobs persist owner/snapshot identity, aggregate snapshot hash, local profile/model, parser/prompt/schema versions, stage checkpoints, progress, unit provenance, explicit skips/errors, and estimated call/input/output budget use. Model calls run outside database transactions.
 
 Flyway applies additive repository-scanner migrations and baselines pre-existing local schemas at version 0. Hibernate remains on `ddl-auto=update` for the older v1 tables; a complete production baseline migration is still future work.
 
@@ -97,6 +101,11 @@ Flyway applies additive repository-scanner migrations and baselines pre-existing
 | GET | `/api/repositories/snapshots/{id}/inventory` | Paginated files, modules, stack, coverage, and skip counts without source bodies | Yes |
 | POST | `/api/repositories/snapshots/{id}/scan-jobs` | Queue or reuse an owned scan job | Yes |
 | DELETE | `/api/repositories/snapshots/{id}` | Delete an owned snapshot, scan metadata, jobs, and private files | Yes |
+| POST | `/api/repositories/snapshots/{id}/analysis-jobs` | Validate local profile/model and queue bounded repository analysis (`202`) | Yes |
+| GET | `/api/repositories/analysis-jobs/{id}` | Poll owned analysis status, stages, progress, versions, and budget use | Yes |
+| POST | `/api/repositories/analysis-jobs/{id}/cancel` | Cancel an owned queued/running repository analysis | Yes |
+| GET | `/api/repositories/analysis-jobs/{id}/units` | Paginated analyzed/skipped chunk provenance; `page`, `size` (maximum 100) | Yes |
+| GET | `/api/repositories/analysis-jobs/{id}/summaries` | Owned chunk/file/module/repository summaries, uncertainty, cache status, and validated evidence coverage | Yes |
 | POST | `/api/repositories/imports` | Import a bounded ZIP snapshot (`multipart/form-data`, field `file`) | Yes |
 | GET | `/api/repositories/snapshots/{id}` | Read own snapshot metadata and content hashes | Yes |
 | POST | `/api/repositories/snapshots/{id}/scan` | Deterministically scan an owned snapshot (`201`) | Yes |
@@ -172,8 +181,18 @@ Never commit populated `.env` files. The root `.env.example` is for Compose; `ba
 | `REPOSITORY_WORKER_COUNT`, `REPOSITORY_QUEUE_CAPACITY` | Bounded in-process repository scan workers and waiting jobs |
 | `REPOSITORY_RETENTION_DAYS` | Snapshot lifecycle retention in days; `0` disables automatic deletion |
 | `REPOSITORY_CLEANUP_INTERVAL_HOURS` | Interval for applying the retention policy |
+| `REPOSITORY_ANALYSIS_WORKERS`, `REPOSITORY_ANALYSIS_QUEUE_CAPACITY` | Bounded in-process orchestration workers and queue |
+| `REPOSITORY_ANALYSIS_INFERENCE_CONCURRENCY` | Concurrent local model calls; default `1` |
+| `REPOSITORY_ANALYSIS_CALL_TIMEOUT_SECONDS`, `REPOSITORY_ANALYSIS_JOB_DEADLINE_SECONDS` | Per-call and total job time limits |
+| `REPOSITORY_ANALYSIS_MAX_CALLS`, `REPOSITORY_ANALYSIS_MAX_INPUT_TOKENS`, `REPOSITORY_ANALYSIS_MAX_OUTPUT_TOKENS`, `REPOSITORY_ANALYSIS_MAX_FILES` | Per-job work budgets |
+| `REPOSITORY_ANALYSIS_CONTEXT_TOKENS` | Installed model context window, not model parameter count |
+| `REPOSITORY_ANALYSIS_*_RESERVE_TOKENS`, `REPOSITORY_ANALYSIS_OVERLAP_LINES` | Prompt/schema/output/safety reserves and stable line-window overlap |
 
 Repository lifecycle cleanup deletes the snapshot, scan metadata, job rows, and private snapshot files together. Future derived artifacts must remain snapshot-owned so the same deletion boundary applies. Temporary import directories are removed after success or failure. Retention is disabled by default to avoid unexpected data loss; administrators can opt in with `REPOSITORY_RETENTION_DAYS`.
+
+Repository analysis requires a completed deterministic scan and a server-managed Ollama profile plus an installed model selected by name. It processes stable bounded chunks sequentially by default; it never sends the whole repository in one prompt. Token use is conservatively estimated at no more than three UTF-16 characters per input token plus prompt metadata. Jobs become `PARTIAL` when configured budgets leave explicit units skipped. Restart recovery resumes only version/hash-valid checkpointed units; otherwise it marks the job `INTERRUPTED`. No repository source or derived summary is routed to the snippet `AiCodeReviewProvider` or a cloud fallback.
+
+Local repository summaries are reduced hierarchically from chunk to file to module to repository. Large levels are merged through bounded intermediate batches rather than concatenating every child. Structured results retain responsibilities, key symbols, dependencies, uncertainty, and snapshot-validated path/line evidence; they are summaries, not verified defects or proof of exhaustive understanding. Imported content and child summaries are delimited as untrusted data, and the Ollama request grants no tools. Owner-private cache identities include safe content/dependency identity, model, prompt/schema/parser versions, and analysis-budget configuration, so relevant changes invalidate affected ancestors. The summaries endpoint exposes completed/failed coverage and cache reuse without returning source bodies.
 
 `VITE_API_BASE_URL` is embedded in frontend assets at build time; do not put secrets in any `VITE_*` variable. A real provider is optional; a configured key can cause submitted source text to be sent to that external service.
 

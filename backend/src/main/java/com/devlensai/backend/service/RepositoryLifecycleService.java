@@ -37,13 +37,14 @@ public class RepositoryLifecycleService {
     private final RepositoryScanRepository scanRepository;
     private final RepositoryJobRepository jobRepository;
     private final RepositoryLifecycleProperties properties;
+    private final RepositoryAnalysisOrchestrator analysisOrchestrator;
     private final ThreadPoolTaskExecutor executor;
     private final Map<Long, Future<?>> running = new ConcurrentHashMap<>();
 
     public RepositoryLifecycleService(RepositoryImportService imports, RepositoryScanService scans,
                                       RepositoryJobStateService jobState, RepositorySnapshotRepository snapshots,
                                       RepositoryScanRepository scanRepository, RepositoryJobRepository jobRepository,
-                                      RepositoryLifecycleProperties properties,
+                                      RepositoryLifecycleProperties properties, RepositoryAnalysisOrchestrator analysisOrchestrator,
                                       @Qualifier("repositoryTaskExecutor") ThreadPoolTaskExecutor executor) {
         this.imports = imports;
         this.scans = scans;
@@ -52,6 +53,7 @@ public class RepositoryLifecycleService {
         this.scanRepository = scanRepository;
         this.jobRepository = jobRepository;
         this.properties = properties;
+        this.analysisOrchestrator = analysisOrchestrator;
         this.executor = executor;
     }
 
@@ -161,6 +163,7 @@ public class RepositoryLifecycleService {
 
     private void deleteSnapshot(RepositorySnapshot snapshot) {
         Long snapshotId = snapshot.getId();
+        analysisOrchestrator.deleteForSnapshot(snapshotId);
         running.entrySet().removeIf(entry -> {
             RepositoryJob job = jobRepository.findById(entry.getKey()).orElse(null);
             if (job != null && job.getSnapshot() != null && snapshotId.equals(job.getSnapshot().getId())) {

@@ -91,6 +91,16 @@ class SecurityConfigTest {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/repositories/snapshots/1"))
                 .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/repositories/snapshots/1/analysis-jobs"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/repositories/analysis-jobs/1"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/repositories/analysis-jobs/1/cancel"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/repositories/analysis-jobs/1/units"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/repositories/analysis-jobs/1/summaries"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

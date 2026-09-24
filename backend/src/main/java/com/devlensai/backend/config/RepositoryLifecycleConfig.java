@@ -6,6 +6,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 @Configuration
 @EnableScheduling
 public class RepositoryLifecycleConfig {
@@ -24,5 +27,23 @@ public class RepositoryLifecycleConfig {
         executor.setWaitForTasksToCompleteOnShutdown(false);
         executor.initialize();
         return executor;
+    }
+
+    @Bean("repositoryAnalysisExecutor")
+    ThreadPoolTaskExecutor repositoryAnalysisExecutor(RepositoryAnalysisProperties properties) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(properties.workerCount());
+        executor.setMaxPoolSize(properties.workerCount());
+        executor.setQueueCapacity(properties.queueCapacity());
+        executor.setThreadNamePrefix("repository-analysis-");
+        executor.setWaitForTasksToCompleteOnShutdown(false);
+        executor.initialize();
+        return executor;
+    }
+
+    @Bean(name = "localInferenceExecutor", destroyMethod = "shutdownNow")
+    ExecutorService localInferenceExecutor(RepositoryAnalysisProperties properties) {
+        return Executors.newFixedThreadPool(properties.inferenceConcurrency(),
+                Thread.ofPlatform().name("local-inference-", 0).factory());
     }
 }

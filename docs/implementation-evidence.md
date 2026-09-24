@@ -207,3 +207,79 @@
 ### Verification status
 
 - **v1.2 Step 05 acceptance checks are complete. v1.2 is marked complete.** The only deferred check is manual visual review, recorded above as unverified rather than performed with a browser.
+
+## v1.3 Step 06 — bounded local repository analysis orchestration
+
+### Implementation and policy boundary
+
+- `RepositoryAnalysisOrchestrator`, its preparation/state services, and the repository-analysis controller add owner-scoped start, status, cancellation, and paginated unit-result APIs over completed v1.2 snapshots. Starts validate snapshot ownership/state plus the configured Ollama profile and installed model before a job is persisted or queued. Equivalent active or terminal work is returned idempotently.
+- `RepositoryAnalysisProvider` is a repository-specific local-provider boundary. Its only production adapter is `OllamaRepositoryAnalysisProvider`; it wraps the existing Ollama implementation and never references the cloud-compatible provider. Repository requests accept only a server-managed profile identifier and validated installed model name, never a URL. A selected-local failure is terminal and cannot fall through to snippet defaults or cloud providers.
+- `RepositoryAnalysisJob`, stage, and unit entities plus Flyway `V3__add_repository_analysis_orchestration.sql` persist status/checkpoints, immutable snapshot aggregate hash, profile/model/provider identity, prompt/parser/schema versions, deadlines, progress, analyzed/skipped counts, call/input/output usage, safe errors, and exact chunk provenance. Snapshot deletion now cancels work and deletes these derived rows before deleting the snapshot.
+- `RepositoryAnalysisStateService` uses short independent transactions for transitions and checkpoints. No database transaction spans a model call. Unique job-stage and job-chunk constraints plus optimistic job versioning prevent duplicate checkpoint rows.
+- Startup recovery marks active work interrupted, verifies snapshot hash and version checkpoints, and resumes only persisted valid units before the original deadline. Invalid or absent checkpoints remain explicitly interrupted or fail with safe retry guidance.
+
+### Bounds, chunking, and configuration
+
+- `RepositoryChunker` uses deterministic stable line windows with bounded overlap, including splitting an oversized single line. Every chunk retains a stable identifier, snapshot file hash, relative path, sequence, and original inclusive line range. Eligible Java, JavaScript/TypeScript/JSX/TSX, Python, and C++ records are processed; unsupported records become explicit skipped units.
+- Input capacity is the configured model context minus system, schema, output, and safety reserves. In the absence of a project tokenizer, the implementation conservatively estimates at most three UTF-16 characters per token plus fixed prompt-metadata overhead and handles overflow by splitting or skipping. Parameter count is never used as context size.
+- A bounded job executor and a separate bounded local-inference executor enforce worker count, queue capacity, and inference concurrency; defaults are one job worker and one local inference. Each call has a timeout and each job has an absolute deadline. Configured file, call, input-token, and output-byte budgets are checked before calls; exhausted remainder is recorded as budget-specific skipped units and yields `PARTIAL`, not fabricated completion.
+- Environment-backed settings are `REPOSITORY_ANALYSIS_WORKERS`, `REPOSITORY_ANALYSIS_QUEUE_CAPACITY`, `REPOSITORY_ANALYSIS_INFERENCE_CONCURRENCY`, `REPOSITORY_ANALYSIS_CALL_TIMEOUT_SECONDS`, `REPOSITORY_ANALYSIS_JOB_DEADLINE_SECONDS`, `REPOSITORY_ANALYSIS_MAX_CALLS`, `REPOSITORY_ANALYSIS_MAX_INPUT_TOKENS`, `REPOSITORY_ANALYSIS_MAX_OUTPUT_BYTES`, `REPOSITORY_ANALYSIS_MAX_FILES`, `REPOSITORY_ANALYSIS_CONTEXT_TOKENS`, `REPOSITORY_ANALYSIS_SYSTEM_RESERVE_TOKENS`, `REPOSITORY_ANALYSIS_SCHEMA_RESERVE_TOKENS`, `REPOSITORY_ANALYSIS_OUTPUT_RESERVE_TOKENS`, `REPOSITORY_ANALYSIS_SAFETY_RESERVE_TOKENS`, and `REPOSITORY_ANALYSIS_CHUNK_OVERLAP_LINES`. Defaults and validation are documented in both example environment files, application properties, Compose, and README.
+
+### Acceptance evidence
+
+- `mvn -q test`: **98 backend tests passed** across 21 test classes, zero failures/errors/skips. The new fake-provider suite covers stable chunk boundaries/provenance, oversized-line splitting, file/call/input/output limits, per-call prompt bounds, concurrency limited to one, queue rejection, cancellation, timeout, installed-model rejection, idempotency, owner denial, valid restart recovery, and invalid-checkpoint interruption. Controller/security tests cover validation, bounded result paging, and unauthenticated denial.
+- Existing provider and snippet tests remained green, including the pre-existing Ollama/cloud selection and public analysis-response contracts. The repository orchestrator has no `AiCodeReviewProvider` dependency, and its fake records prove repository source is delivered only through `RepositoryAnalysisProvider`; failure has no fallback path.
+- `RepositoryScanMigrationTest` successfully baselined PostgreSQL-mode H2 and applied Flyway V1, V2, and V3. `mvn -q -DskipTests package`, `npm test -- --run` (**24 frontend tests across 7 files**), `npm run build` (**43 modules transformed**), `docker compose config --quiet`, and `git diff --check` passed.
+- During implementation, the first focused orchestration run exposed shared-context job-count state and was corrected to assert relative persisted counts. The first full regression run exposed that a blank default Ollama model had accidentally become valid for the snippet constructor; the explicit-selection-only behavior was moved to a separate repository-adapter constructor and the focused provider test plus full suite then passed.
+- No browser, screenshot, screen recording, desktop automation, imported repository execution, package installation, model download, cloud call, commit, or push was used. Step 06 has no frontend UI change, so no new visual check applies.
+
+### Limitations and risks
+
+- The token calculation is a documented conservative estimate rather than a model-specific tokenizer. The Ollama adapter also applies the configured output reserve as `num_predict`, while actual persisted output use is bounded by response bytes.
+- Execution and idempotent start synchronization are process-local. Durable checkpoints make restart state explicit, but this is not a multi-instance distributed lock or exactly-once execution system.
+- Results are persisted per bounded chunk. Cross-file synthesis or a final repository-wide report is intentionally deferred; the implementation never sends the whole repository in one prompt.
+- Live Ollama inference was not required by this step and was not run. Fake-provider checks establish orchestration behavior but do not prove model-specific latency or output quality. The migration ran in PostgreSQL-mode H2 rather than a live PostgreSQL instance in this step.
+
+### Verification status
+
+- **Step 06 acceptance checks are complete.** No visual check is deferred because this step changes backend orchestration only.
+
+## v1.3 Step 07 — hierarchical summaries with provenance
+
+### Implementation and persistence
+
+- `RepositoryHierarchySummaryService` now reduces validated local summaries through `CHUNK`, `FILE`, `MODULE`, and `REPOSITORY` levels. Child summaries are placed into bounded batches and recursively reduced; no level concatenates all repository content into one call. The existing call/input/output/file/deadline/concurrency/cancellation limits remain authoritative, and budget exhaustion persists explicit failed/skipped coverage rather than claiming completion.
+- `RepositorySummaryResult` is the strict provider contract for responsibilities, key symbols, dependencies, uncertainty, and path/line evidence. `OllamaAiProvider` requests only this exact JSON shape for repository summaries and rejects malformed/oversized output. The system message identifies code, comments, documentation, identifiers, and child summaries as untrusted, forbids following their instructions, and grants no shell, filesystem, network, or tool capability. Source and child data are explicitly delimited.
+- `RepositorySummary`, its level enum/repository/DTOs, and additive Flyway migration `V4__add_repository_hierarchical_summaries.sql` persist summaries, uncertainty, cache status, and evidence separately from findings. `GET /api/repositories/analysis-jobs/{id}/summaries` is authenticated and owner-checked. It exposes hierarchy coverage and safe provenance without source bodies or server paths.
+- Every evidence path and inclusive line range is checked against both the exact scan snapshot and the evidence supplied to that summary level. Invented paths, out-of-range lines, or citations outside child evidence are rejected. A summary without evidence must retain uncertainty. Summaries are advisory descriptions, not verified defects.
+- Chunk input comes only from the scanner's already filtered/redacted `safeContent`; merge calls receive only validated structured summaries and bounded dependency metadata. No excluded raw content is reloaded. Selected evidence remains persisted so later retrieval can return to exact snapshot code instead of relying only on lossy text.
+- The owner-private cache key contains user ID, safe content/dependency identity, selected model, prompt/schema/parser versions, context reserves, call/input/output/file budgets, and overlap configuration. Child identities feed ancestor identities, so file edits and dependency changes invalidate affected file/module/repository entries. Model, prompt, schema, parser, or budget changes invalidate all affected levels. Snapshot deletion removes cached summaries through the existing derived-artifact boundary.
+- Malformed structured output and invalid evidence receive at most one repair retry. Exhausted retries mark the unit partial/failed with a safe error; raw repository content and raw model output are not logged.
+
+### Acceptance evidence
+
+- `mvn -q test`: **102 backend tests passed** across 21 test classes, zero failures/errors/skips. The hierarchy fake-provider coverage includes tiny repositories, oversized module/chunk reduction, stable provenance, strict per-call bounds, budget exhaustion, cancellation, fake citations, malformed output with exactly one retry, injected repository instructions, and owner denial.
+- Cache acceptance checks prove reuse for unchanged safe content, no cross-owner reuse, and invalidation after file hash/content edits, dependency changes, model changes, prompt-version changes, and budget/configuration changes. Ancestor identities incorporate child and dependency identities.
+- The local Ollama adapter test inspected the synthetic request and confirmed that injected text remains inside explicit untrusted delimiters while the system instruction forbids following repository instructions or requesting tool execution. It also validated the strict structured response mapping.
+- Flyway's PostgreSQL-mode H2 check baselined version 0 and applied V1 through V4, including the summary and evidence tables. Existing snippet-provider, authentication, ownership, repository lifecycle, scanner, migration, and public response tests remained green.
+- `mvn -q -DskipTests package`, `npm test -- --run` (**24 tests across 7 files**), `npm run build` (**43 modules transformed**), `docker compose config --quiet`, and `git diff --check` passed.
+- `curl --max-time 2 http://127.0.0.1:11434/api/tags` failed to connect on 2026-09-24. Therefore the optional real-Ollama fixture was unavailable: no model validity, omissions, or latency claim is made. Fake/stub checks do not prove real-model summary quality.
+- No browser, screenshot, screen recording, desktop automation, imported code execution, package installation, cloud call, model installation/download, commit, or push was used. Step 07 changes no frontend UI, so no visual check applies.
+
+### Corrections discovered during checks
+
+- The first focused run exposed lazy loading while mapping cached element collections; the summary collections are now loaded within the bounded owner-scoped summary path, and the rerun passed.
+- The first cache-invalidation assertion then exposed that detached cached children could stop the hierarchy before dependency-aware ancestors. Initializing the persisted structured cache entry fixed reuse and ensured dependency changes trigger new ancestor calls.
+- The pre-existing Step 06 budget fixture initially completed after the larger Step 07 test budget was introduced. Its synthetic source was enlarged so it continues to prove explicit budget truncation rather than asserting a partial status without exhausting a bound.
+- A final cancellation rerun exposed an optimistic-lock race between an owner cancellation and a worker checkpoint. Short job-state mutations now acquire a database row lock, cancellation becomes terminal in its owner transaction, and the focused plus complete 102-test suites passed afterward.
+
+### Limitations and risks
+
+- Summary quality and omissions depend on the selected installed local model. Validation proves structure and evidence bounds, not semantic correctness or exhaustive understanding.
+- The conservative token estimate remains model-agnostic. Output and merge payloads are additionally size-bounded, but an exact model tokenizer is not available.
+- Cache reuse is owner-private and safe-content based within the existing single-process/database design. It is not a distributed cache or a claim of identical behavior across different model builds that share the same administrator-supplied model name.
+- Summary evidence is retained, but no targeted retrieval or cross-file finding workflow is added in this step.
+
+### Verification status
+
+- **Step 07 acceptance checks are complete with stub/fake providers.** The optional real-Ollama fixture is precisely recorded as unavailable and is not claimed as verified.
