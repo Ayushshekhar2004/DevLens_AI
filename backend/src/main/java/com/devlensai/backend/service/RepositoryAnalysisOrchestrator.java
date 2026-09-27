@@ -27,8 +27,8 @@ import java.util.concurrent.*;
 
 @Service
 public class RepositoryAnalysisOrchestrator {
-    static final String PROMPT_VERSION = "repository-summary-v1";
-    static final String SCHEMA_VERSION = "repository-summary-v1";
+    static final String PROMPT_VERSION = "repository-review-v1";
+    static final String SCHEMA_VERSION = "repository-finding-v1";
     private static final int MAX_PAGE_SIZE = 100;
     private final RepositoryAnalysisProvider provider;
     private final RepositoryAnalysisProperties properties;
@@ -36,6 +36,7 @@ public class RepositoryAnalysisOrchestrator {
     private final RepositoryAnalysisStateService state;
     private final RepositoryChunker chunker;
     private final RepositoryHierarchySummaryService hierarchy;
+    private final RepositoryReviewService review;
     private final RepositoryAnalysisUnitRepository unitRepository;
     private final ThreadPoolTaskExecutor executor;
     private final Map<Long, Future<?>> running = new ConcurrentHashMap<>();
@@ -43,11 +44,11 @@ public class RepositoryAnalysisOrchestrator {
     public RepositoryAnalysisOrchestrator(RepositoryAnalysisProvider provider,
             RepositoryAnalysisProperties properties, RepositoryAnalysisPreparationService preparation,
             RepositoryAnalysisStateService state, RepositoryChunker chunker,
-            RepositoryHierarchySummaryService hierarchy,
+            RepositoryHierarchySummaryService hierarchy, RepositoryReviewService review,
             RepositoryAnalysisUnitRepository unitRepository,
             @Qualifier("repositoryAnalysisExecutor") ThreadPoolTaskExecutor executor) {
         this.provider = provider; this.properties = properties; this.preparation = preparation;
-        this.state = state; this.chunker = chunker; this.hierarchy = hierarchy; this.unitRepository = unitRepository;
+        this.state = state; this.chunker = chunker; this.hierarchy = hierarchy; this.review = review; this.unitRepository = unitRepository;
         this.executor = executor;
     }
 
@@ -76,6 +77,11 @@ public class RepositoryAnalysisOrchestrator {
     public List<RepositorySummaryResponse> summaries(User user, Long jobId) {
         state.owned(jobId, user.getId());
         return state.summaryResponses(jobId);
+    }
+
+    public com.devlensai.backend.dto.RepositoryReportResponse report(User user, Long jobId) {
+        state.owned(jobId, user.getId());
+        return review.report(user, jobId);
     }
 
     public RepositoryAnalysisJobResponse cancel(User user, Long jobId) {
@@ -145,11 +151,16 @@ public class RepositoryAnalysisOrchestrator {
                     () -> state.cancellationRequested(jobId)).partial();
             state.stageCompleted(jobId, activeStage);
 
+            activeStage = RepositoryAnalysisStageType.REVIEWING;
+            state.stageRunning(jobId, activeStage);
+            boolean reviewPartial = review.review(jobId, context, prepared).partial();
+            state.stageCompleted(jobId, activeStage);
+
             activeStage = RepositoryAnalysisStageType.FINALIZING;
             state.stageRunning(jobId, activeStage);
             boolean skipped = state.units(jobId).stream().anyMatch(unit -> unit.getStatus() == RepositoryAnalysisUnitStatus.SKIPPED);
-            state.complete(jobId, budgetTruncated || skipped,
-                    budgetTruncated ? "Repository analysis completed partially because a configured budget was reached" : null);
+            state.complete(jobId, budgetTruncated || reviewPartial || skipped,
+                    budgetTruncated || reviewPartial ? "Repository analysis completed partially; consult report coverage" : null);
         } catch (CancellationException | InterruptedException exception) {
             Thread.currentThread().interrupt(); state.cancelled(jobId);
         } catch (TimeoutException exception) {

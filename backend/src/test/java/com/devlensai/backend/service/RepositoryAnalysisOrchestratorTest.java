@@ -6,6 +6,9 @@ import com.devlensai.backend.dto.CodeReviewResult;
 import com.devlensai.backend.dto.StartRepositoryAnalysisRequest;
 import com.devlensai.backend.dto.RepositoryEvidenceReference;
 import com.devlensai.backend.dto.RepositorySummaryResult;
+import com.devlensai.backend.dto.RepositoryReviewResult;
+import com.devlensai.backend.dto.RepositoryFindingCandidate;
+import com.devlensai.backend.dto.RepositoryReportResponse;
 import com.devlensai.backend.entity.*;
 import com.devlensai.backend.exception.OllamaSelectionException;
 import com.devlensai.backend.exception.AiProviderMalformedResponseException;
@@ -54,6 +57,7 @@ class RepositoryAnalysisOrchestratorTest {
     @Autowired RepositorySnapshotRepository snapshots;
     @Autowired RepositoryScanRepository scans;
     @Autowired RepositoryAnalysisJobRepository jobs;
+    @Autowired RepositoryReportRepository reports;
 
     private User owner;
     private User other;
@@ -232,9 +236,61 @@ class RepositoryAnalysisOrchestratorTest {
         assertThat(provider.sources).hasSize(2);
     }
 
+    @Test
+    void persistsEvidencedCrossFileReportAndHonestCleanAndPartialCoverage() throws Exception {
+        provider.mode = Mode.REVIEW_FINDINGS;
+        var findingSnapshot = crossFileRepository("defect.zip");
+        var findingJob = terminal(owner, orchestrator.start(owner, findingSnapshot.getId(),
+                new StartRepositoryAnalysisRequest("local", "review-model")).id());
+        var report = orchestrator.report(owner, findingJob.id());
+        assertThat(report.findings()).isNotEmpty().allSatisfy(finding -> {
+            assertThat(finding.provenance()).isEqualTo("AI");
+            assertThat(finding.snapshotHash()).isEqualTo(report.snapshotHash());
+            assertThat(finding.primaryLocation().relativePath()).doesNotStartWith("/");
+            assertThat(finding.relatedEvidence()).isNotEmpty();
+        });
+        assertThat(report.findings()).isSortedAccordingTo(java.util.Comparator
+                .comparingInt((RepositoryReportResponse.Finding value) -> List.of("CRITICAL", "HIGH", "MEDIUM", "LOW").indexOf(value.severity()))
+                .thenComparing(value -> value.primaryLocation().relativePath()).thenComparing(RepositoryReportResponse.Finding::id));
+        assertThatThrownBy(() -> orchestrator.report(other, findingJob.id())).isInstanceOf(RepositorySnapshotNotFoundException.class);
+        orchestrator.deleteForSnapshot(findingSnapshot.getId());
+        assertThat(reports.findByJobIdAndJobUserId(findingJob.id(), owner.getId())).isEmpty();
+
+        provider.mode = Mode.SUCCESS;
+        var cleanJob = terminal(owner, orchestrator.start(owner, repository("clean.zip", "class Clean {}").getId(),
+                new StartRepositoryAnalysisRequest("local", "clean-model")).id());
+        var clean = orchestrator.report(owner, cleanJob.id());
+        assertThat(clean.findings()).isEmpty();
+        assertThat(clean.coverageLabel()).contains("not a security or correctness certification");
+
+        provider.mode = Mode.REVIEW_MALFORMED;
+        var partialJob = terminal(owner, orchestrator.start(owner, repository("partial.zip", "class Partial {}").getId(),
+                new StartRepositoryAnalysisRequest("local", "partial-model")).id());
+        var partial = orchestrator.report(owner, partialJob.id());
+        assertThat(partial.partialCoverage()).isTrue();
+        assertThat(partial.incompletePasses()).isGreaterThan(0);
+        assertThat(partial.coverageLabel()).contains("not a clean bill of health");
+    }
+
     private RepositorySnapshot repository(String name, String source) {
         String hash = "a".repeat(63) + (snapshots.count() % 10);
         return repository(owner, name, source, hash, List.of());
+    }
+
+    private RepositorySnapshot crossFileRepository(String name) {
+        List<RepositoryFileRecord> files = List.of(
+                new RepositoryFileRecord("src/OrderController.java", "JAVA", "1".repeat(64), 3, "PARSED", "HEURISTIC", "src", "class OrderController { void create() { service.save(null); } }"),
+                new RepositoryFileRecord("src/OrderService.java", "JAVA", "2".repeat(64), 3, "PARSED", "HEURISTIC", "src", "class OrderService { void save(Object value) { repository.save(value); } }"),
+                new RepositoryFileRecord("src/OrderRepository.java", "JAVA", "3".repeat(64), 2, "PARSED", "HEURISTIC", "src", "interface OrderRepository { void save(Object value); }"));
+        List<RepositorySnapshotFile> snapshotFiles = files.stream().map(file ->
+                new RepositorySnapshotFile(file.relativePath(), file.contentHash(), file.safeContent().length())).toList();
+        RepositorySnapshot snapshot = snapshots.save(new RepositorySnapshot(owner, java.util.UUID.randomUUID().toString(),
+                name, snapshotFiles.stream().mapToLong(RepositorySnapshotFile::getSizeBytes).sum(), snapshotFiles));
+        scans.save(new RepositoryScan(snapshot, owner, RepositoryChunker.VERSION, "COMPLETED", "Java",
+                List.of(new RepositoryModuleRecord("main", "src", "JAVA", null)), files, List.of(), List.of(),
+                List.of(new RepositoryDependencyEdgeRecord("src/OrderController.java", "src/OrderService.java", "IMPORT", "INTERNAL"),
+                        new RepositoryDependencyEdgeRecord("src/OrderService.java", "src/OrderRepository.java", "IMPORT", "INTERNAL")), List.of()));
+        return snapshot;
     }
 
     private RepositorySnapshot repository(User user, String name, String source, String hash,
@@ -257,7 +313,7 @@ class RepositoryAnalysisOrchestratorTest {
         throw new AssertionError("Repository analysis did not reach a terminal state");
     }
 
-    enum Mode { SUCCESS, TIMEOUT, BLOCK, FAKE_CITATION, MALFORMED }
+    enum Mode { SUCCESS, TIMEOUT, BLOCK, FAKE_CITATION, MALFORMED, REVIEW_FINDINGS, REVIEW_MALFORMED }
 
     @TestConfiguration
     static class FakeConfiguration {
@@ -290,6 +346,17 @@ class RepositoryAnalysisOrchestratorTest {
                         allowed.isEmpty() ? List.of() : List.of(allowed.getFirst()));
             } catch (InterruptedException exception) { Thread.currentThread().interrupt(); throw new RuntimeException("interrupted"); }
             finally { concurrent.decrementAndGet(); }
+        }
+        @Override public RepositoryReviewResult reviewRepository(String target, String context,
+                List<RepositoryEvidenceReference> allowed, String profile, String model) {
+            if (mode == Mode.REVIEW_MALFORMED) throw new AiProviderMalformedResponseException("invalid review output");
+            if (mode == Mode.REVIEW_FINDINGS && allowed.size() > 1) {
+                return new RepositoryReviewResult(false, "Evidence limited to synthetic context", List.of(
+                        new RepositoryFindingCandidate("validation", "HIGH", "QUALITATIVE",
+                                "Caller permits a null value across the service contract", "The controller and service evidence show no guard",
+                                allowed.getFirst(), List.of(allowed.get(1)), "Validate before crossing the service boundary")));
+            }
+            return new RepositoryReviewResult(false, "Synthetic review", List.of());
         }
         @Override public String providerName() { return "ollama"; }
     }

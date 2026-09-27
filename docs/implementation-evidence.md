@@ -283,3 +283,74 @@
 ### Verification status
 
 - **Step 07 acceptance checks are complete with stub/fake providers.** The optional real-Ollama fixture is precisely recorded as unavailable and is not claimed as verified.
+
+## v1.3 Step 08 — deterministic targeted repository context
+
+### Implementation and safety boundary
+
+- `RepositoryContextRetrievalService` builds a read-only context pack for an owned completed snapshot and an exact caller-supplied snapshot hash. Ownership and snapshot status are checked before candidate creation or ranking. It reads only indexed `safeContent` from PostgreSQL and never accepts or constructs an arbitrary filesystem read, invokes AI, contacts a network service, or executes imported content.
+- `RepositoryRetrievalRequest`, `RepositoryContextPack`, and `RepositoryRetrievalInspectionResponse` distinguish the internal evidence-bearing context pack from the authenticated metadata-only inspection response. Targets support `FILE`, `SYMBOL`, `MODULE`, and `TASK`; file/module inputs reject absolute, traversal, Windows drive/backslash, and NUL paths. The inspection endpoint returns paths, hashes, inclusive line ranges, token estimates, scores, reasons, compact summary hints, bounded exclusions, and bounded unresolved relationships, but never source bodies.
+- Ranking combines exact indexed paths/symbols/modules, bounded lexical path/symbol/content matches, import and reverse-dependency traversal, module adjacency, relevant tests, and owner-private completed summary hints. The documented scoring version is `lexical-graph-v1`: exact path `+1000`, symbol `+900`, module `+800`, depth-one graph relationship `+475` decreasing by depth, relevant test `+475`, lexical symbol `+400`, task path `+300`, lexical path `+250`, module adjacency `+200`, summary hint `+125`, and lexical content `+80`. Ties are relative-path ascending, making repeated selection deterministic.
+- Cycles are bounded with depth-aware visited state. Unresolved external/alias/dynamic relationships remain explicit rather than becoming fabricated edges. Relative JavaScript/TypeScript imports and Java qualified names resolve only when their normalized target exists in the eligible indexed path set. These are static indexed relationships, not a claimed runtime call graph.
+- Candidate count, graph depth, selected snippets, per-file token share, stable line window, unresolved relationships, and total usable context are bounded. Instruction, output, and safety reserves are removed from the configured model context before selection. Each included snippet retains its exact snapshot file hash and original inclusive lines. Missing context and budget/snippet truncation are explicit, with included/excluded reasons.
+- `RepositoryAnalysisPreparationService` now supplies the existing indexed symbols/imports alongside files/modules/dependency edges after its owner check. `RepositorySummaryRepository` supplies at most 100 owner/snapshot/status-filtered hints. `RepositoryAnalysisController` exposes `POST /api/repositories/snapshots/{id}/context-inspection`; existing JWT policy protects it. No schema migration was required because Step 08 reads the existing V1–V4 indexed metadata and summary tables.
+
+### Configuration and changed files
+
+- `RepositoryRetrievalProperties`, `application.properties`, both `.env.example` files, and `docker-compose.yml` add validated settings for graph depth, candidate/snippet limits, per-file tokens, context tokens, instruction/output/safety reserves, and line-window size. Example values contain no secrets.
+- `README.md` records the endpoint, deterministic weights/tie-break, bounds, provenance contract, metadata-only response, and static-relationship limitation.
+- `RepositoryContextRetrievalServiceTest` uses an entirely synthetic controller/service/repository/frontend fixture plus relevant test, unrelated distractor, duplicate symbols, cyclic imports, an unresolved alias, and an unsupported file. Updated controller/security tests cover metadata-only mapping and unauthenticated denial.
+
+### Acceptance evidence
+
+- `mvn -q -Dtest=RepositoryContextRetrievalServiceTest -DargLine=-javaagent:/Users/ayushshekharsingh/.m2/repository/net/bytebuddy/byte-buddy-agent/1.18.11/byte-buddy-agent-1.18.11.jar test`: **3 focused retrieval tests passed**. They assert relevant controller-to-service-to-repository relationships and tests rank into the bounded selection while the distractor does not; duplicate names use deterministic path ordering; cycles terminate; aliases/unsupported content are explicit; budget pressure reports truncation; malicious and stale targets fail; cross-owner access fails; every snippet hash/path/line belongs to the permitted snapshot and total tokens stay within budget; repeated packs are equal; safe inspection omits source.
+- `mvn -q -Dtest=RepositoryAnalysisControllerTest,SecurityConfigTest -DargLine=-javaagent:/Users/ayushshekharsingh/.m2/repository/net/bytebuddy/byte-buddy-agent/1.18.11/byte-buddy-agent-1.18.11.jar test`: passed endpoint DTO mapping plus unauthenticated denial.
+- The first full sandboxed `mvn` run executed **105 tests** but existing Ollama/OpenAI-compatible provider stub tests recorded 13 `Socket: Operation not permitted` errors because the restricted sandbox prohibited their loopback listeners. The same full command rerun with approved loopback permission passed: **105 backend tests, zero failures/errors/skips**. This was an environment permission failure, not an application failure.
+- `mvn -q -DskipTests package`, `npm test -- --run` (**24 tests across 7 files**), `npm run build` (**43 modules transformed**), `docker compose config --quiet`, `git diff --check`, and static prohibited-call inspection passed. One `mvn -q -DskipTests package` was initially issued from the repository root and failed because the Maven project is under `backend/`; the corrected backend-directory command passed.
+- Static inspection of the new retrieval production path found no embeddings, vector database, HTTP client, process execution, or filesystem content-read API. The retrieval implementation made zero AI/provider calls and zero network calls. Existing snippet/provider/history, authentication, ownership, repository lifecycle, scanner, hierarchy, migration, and public response tests remain green.
+- No browser, screenshot, screen recording, desktop automation, imported code execution, package installation, cloud/local model call, commit, or push was used. Step 08 adds no frontend UI, so no visual check applies.
+
+### Limitations and risks
+
+- Retrieval is deliberately lexical and graph-based. It can miss semantic relationships not present in indexed symbols/imports, aliases the scanner could not resolve, reflection, framework wiring, and runtime dispatch. Scores describe retrieval relevance, not execution certainty.
+- The conservative character-based token estimate is not a model-specific tokenizer. The configured reserves and hard total/per-file bounds reduce overflow risk, and truncation remains explicit, but exact model tokenization may differ.
+- Summary hints are compact, lossy ranking signals only; selected source snippets with snapshot provenance take priority. Unsupported or redaction-excluded files cannot contribute source content.
+
+### Verification status
+
+- **Step 08 acceptance checks are complete.** Retrieval is deterministic, bounded, owner/snapshot isolated, read-only, local, and metadata-inspectable without exposing source bodies.
+
+## v1.3 Step 09 — evidenced cross-file findings and repository reports
+
+### Implementation and provider boundary
+
+- `RepositoryReviewService` adds a bounded `REVIEWING` stage after hierarchical summaries. It performs deterministic file-targeted and module-targeted passes through the Step 08 retrieval service, so each local-provider request contains only eligible redacted snapshot snippets, compact summary hints, exact hashes/lines, and an allowlist of evidence locations. Existing call/input/output/deadline/concurrency/cancellation budgets remain authoritative; no database transaction spans a model call.
+- `RepositoryAnalysisProvider` now shares a repository-specific `reviewRepository` contract. `OllamaRepositoryAnalysisProvider` is still its only production implementation, so repository text cannot fall through to the snippet cloud provider. `OllamaAiProvider` delimits context as untrusted inert data, grants no tools, and requires strict JSON for explicit insufficient context, qualitative uncertainty, and finding candidates. Invalid severity, extra/missing schema fields, malformed JSON, oversized output, and invalid evidence structure fail safely without logging raw source/output.
+- `RepositoryFindingCandidate` and `RepositoryReviewResult` define the provider schema. Model confidence remains qualitative; percentage-shaped confidence is discarded and replaced by an advisory uncertainty label rather than treated as correctness probability.
+
+### Validation, aggregation, and reporting
+
+- Every primary and related reference is checked against the exact retrieved snapshot path and inclusive line window. Invented/invalid primary references are rejected and make coverage incomplete. Unsupported related references are removed, severity is downgraded one level, and uncertainty is explicit. Category names are normalized. Model-supplied text is stored as inert escaped text, with HTML delimiters escaped and executable `javascript:` links blocked; the API emits data only and no unsafe HTML renderer or executable link is added.
+- Finding identity is a stable SHA-256 over normalized category, primary location, and normalized claim. Aggregation uses deterministic severity/path/line/category/identifier ordering. Evidence-overlapping, semantically similar chunk findings merge and union validated evidence; distinct claims at the same location remain separate. Contradictory overlapping claims remain separate and both receive `CONFLICTING_EVIDENCE` uncertainty.
+- `RepositoryReport`, `RepositoryFinding`, `RepositoryFindingEvidence`, and `RepositoryModuleCoverage` persist report status, prioritized findings, AI provenance, snapshot/model/prompt/schema identity, exact evidence, file counts, deterministic per-module coverage, incomplete/skipped/unsupported work, and consumed budgets. `V5__add_repository_evidenced_reports.sql` adds these owner-linked derived tables with job cascade deletion. Existing snapshot deletion explicitly deletes reports before analysis jobs.
+- `GET /api/repositories/analysis-jobs/{id}/report` is authenticated and owner-checked. The response exposes advisory findings and coverage but no source bodies or provider URLs. Partial/no-findings reports state that unreviewed areas remain and that the result is not a clean bill of health. Complete/no-findings reports still state that the result is not a security or correctness certification. No patch is applied, no generated code is executed, and no security/clinical-safety certification is made.
+
+### Acceptance evidence
+
+- Final `mvn -q -DargLine=-javaagent:/Users/ayushshekharsingh/.m2/repository/net/bytebuddy/byte-buddy-agent/1.18.11/byte-buddy-agent-1.18.11.jar test`: **110 backend tests passed**, zero failures/errors/skips. The approved permission was used only for existing loopback HTTP stub servers; no remote service was contacted.
+- Deterministic aggregation tests cover overlapping duplicates, two distinct categories/defects at one location, contradictory conclusions, stable results independent of input order, invalid severity, invented primary locations, unsupported related evidence downgrade, injected HTML, and executable-link neutralization.
+- The synthetic cross-file fixture models controller-to-service-to-repository relationships. A deterministic local provider stub produces cited validation findings; tests verify exact allowed evidence, AI provenance, stable report order, snapshot/model metadata, module/file coverage, cross-owner denial, clean-control no-findings language, malformed-provider partial-stage labeling, budget counters, and report cleanup through snapshot-derived deletion.
+- The Ollama adapter test inspects the local request boundary, untrusted delimiters, evidence allowlist, and strict valid response mapping, then verifies invalid severity and malformed JSON are rejected. Stub results prove schema/orchestration behavior, not real-model semantic quality.
+- Flyway's PostgreSQL-mode H2 check baselined version 0 and applied V1 through V5, then verified the report, module coverage, finding, and evidence tables. The first full run found the migration-count assertion still expected V4; it was corrected to the actual additive V5 boundary, and the focused plus final full suites passed.
+- `mvn -q -DskipTests package`, `npm test -- --run` (**24 tests across 7 files**), `npm run build` (**43 modules transformed**), `docker compose config --quiet`, and `git diff --check` passed. Existing snippet analysis/history, authentication, ownership, lifecycle, scanner, provider, retrieval, summary, migration, and frontend regression checks remain green.
+- No real Ollama service was used in this step, so model-specific misses/false positives, output wording, and latency remain unmeasured rather than inferred from deterministic stubs. No browser, screenshot, screen recording, desktop automation, imported code execution, package installation, model installation/download, cloud call, commit, or push was used. Step 09 adds no frontend report renderer, so no visual check applies.
+
+### Limitations and risks
+
+- Static retrieval and local-model review can miss framework wiring, reflection, runtime dispatch, alias relationships, and defects outside selected budgeted context. Finding validation proves provenance, not that a model claim is true.
+- Lexical similarity is deliberately simple and deterministic. It may retain near-duplicate wording or avoid merging ambiguous same-line claims; this is safer than collapsing distinct defects. Conflicts are surfaced rather than resolved automatically.
+- Report text is advisory and escaped at persistence/API boundaries. Any future frontend renderer must continue using normal text rendering and must not introduce raw HTML or executable links.
+
+### Verification status
+
+- **Step 09 acceptance checks are complete with deterministic provider stubs.** Real-model false positives and misses remain explicitly unverified because no local Ollama model was available or required for deterministic acceptance.

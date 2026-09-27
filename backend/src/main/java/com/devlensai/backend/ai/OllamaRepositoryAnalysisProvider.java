@@ -3,6 +3,7 @@ package com.devlensai.backend.ai;
 import com.devlensai.backend.dto.CodeReviewResult;
 import com.devlensai.backend.dto.RepositoryEvidenceReference;
 import com.devlensai.backend.dto.RepositorySummaryResult;
+import com.devlensai.backend.dto.RepositoryReviewResult;
 import com.devlensai.backend.entity.ProgrammingLanguage;
 import com.devlensai.backend.exception.OllamaSelectionException;
 import com.devlensai.backend.config.RepositoryAnalysisProperties;
@@ -44,6 +45,12 @@ public class OllamaRepositoryAnalysisProvider implements RepositoryAnalysisProvi
     public RepositorySummaryResult summarize(String level, String identity, String untrustedContent,
             java.util.List<RepositoryEvidenceReference> allowedEvidence, String profileId, String model) {
         return delegate.summarizeRepositoryValidated(level, identity, untrustedContent, allowedEvidence, profileId, model);
+    }
+
+    @Override
+    public RepositoryReviewResult reviewRepository(String target, String untrustedContext,
+            java.util.List<RepositoryEvidenceReference> allowedEvidence, String profileId, String model) {
+        return delegate.reviewRepositoryValidated(target, untrustedContext, allowedEvidence, profileId, model);
     }
 
     @Override public String providerName() { return delegate.providerName(); }

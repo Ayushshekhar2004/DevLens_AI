@@ -3,6 +3,7 @@ package com.devlensai.backend.controller;
 import com.devlensai.backend.dto.*;
 import com.devlensai.backend.entity.User;
 import com.devlensai.backend.service.RepositoryAnalysisOrchestrator;
+import com.devlensai.backend.service.RepositoryContextRetrievalService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -12,7 +13,9 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/repositories")
 public class RepositoryAnalysisController {
     private final RepositoryAnalysisOrchestrator orchestrator;
-    public RepositoryAnalysisController(RepositoryAnalysisOrchestrator orchestrator) { this.orchestrator = orchestrator; }
+    private final RepositoryContextRetrievalService retrieval;
+    public RepositoryAnalysisController(RepositoryAnalysisOrchestrator orchestrator,
+            RepositoryContextRetrievalService retrieval) { this.orchestrator = orchestrator; this.retrieval = retrieval; }
 
     @PostMapping("/snapshots/{snapshotId}/analysis-jobs")
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -42,5 +45,16 @@ public class RepositoryAnalysisController {
     public java.util.List<RepositorySummaryResponse> summaries(
             @AuthenticationPrincipal User user, @PathVariable Long jobId) {
         return orchestrator.summaries(user, jobId);
+    }
+
+    @GetMapping("/analysis-jobs/{jobId}/report")
+    public RepositoryReportResponse report(@AuthenticationPrincipal User user, @PathVariable Long jobId) {
+        return orchestrator.report(user, jobId);
+    }
+
+    @PostMapping("/snapshots/{snapshotId}/context-inspection")
+    public RepositoryRetrievalInspectionResponse inspect(@AuthenticationPrincipal User user,
+            @PathVariable Long snapshotId, @Valid @RequestBody RepositoryRetrievalRequest request) {
+        return retrieval.inspect(user, snapshotId, request);
     }
 }

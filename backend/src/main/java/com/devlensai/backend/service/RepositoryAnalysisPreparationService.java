@@ -3,6 +3,8 @@ package com.devlensai.backend.service;
 import com.devlensai.backend.entity.RepositoryFileRecord;
 import com.devlensai.backend.entity.RepositoryModuleRecord;
 import com.devlensai.backend.entity.RepositoryDependencyEdgeRecord;
+import com.devlensai.backend.entity.RepositorySymbolRecord;
+import com.devlensai.backend.entity.RepositoryImportRecord;
 import com.devlensai.backend.entity.RepositorySnapshot;
 import com.devlensai.backend.entity.User;
 import com.devlensai.backend.exception.RepositoryAnalysisException;
@@ -38,7 +40,7 @@ public class RepositoryAnalysisPreparationService {
         List<RepositoryFileRecord> files = scan.getFiles().stream()
                 .sorted(Comparator.comparing(RepositoryFileRecord::relativePath)).toList();
         return new Prepared(snapshot, snapshotHash(snapshot), scan.getParserVersion(), files,
-                scan.getModules(), scan.getDependencyEdges());
+                scan.getModules(), scan.getSymbols(), scan.getImports(), scan.getDependencyEdges());
     }
 
     public String snapshotHash(RepositorySnapshot snapshot) {
@@ -51,5 +53,6 @@ public class RepositoryAnalysisPreparationService {
 
     public record Prepared(RepositorySnapshot snapshot, String snapshotHash, String parserVersion,
                            List<RepositoryFileRecord> files, List<RepositoryModuleRecord> modules,
+                           List<RepositorySymbolRecord> symbols, List<RepositoryImportRecord> imports,
                            List<RepositoryDependencyEdgeRecord> dependencyEdges) { }
 }

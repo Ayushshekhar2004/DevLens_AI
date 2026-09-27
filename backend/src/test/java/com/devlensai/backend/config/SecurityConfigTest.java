@@ -101,6 +101,10 @@ class SecurityConfigTest {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/repositories/analysis-jobs/1/summaries"))
                 .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/repositories/analysis-jobs/1/report"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/repositories/snapshots/1/context-inspection"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

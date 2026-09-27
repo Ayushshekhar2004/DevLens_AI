@@ -20,7 +20,7 @@ class RepositoryScanMigrationTest {
                 .baselineOnMigrate(true).baselineVersion("0").locations("classpath:db/migration")
                 .load().migrate();
 
-        assertThat(result.migrationsExecuted).isEqualTo(4);
+        assertThat(result.migrationsExecuted).isEqualTo(5);
         try (var connection = DriverManager.getConnection(url, "sa", "")) {
             var metadata = connection.getMetaData();
             for (String table : new String[]{"repository_scans", "repository_scan_modules", "repository_scan_files",
@@ -34,7 +34,8 @@ class RepositoryScanMigrationTest {
                 assertThat(tables.next()).as("repository_jobs").isTrue();
             }
             for (String table : new String[]{"repository_analysis_jobs", "repository_analysis_stages", "repository_analysis_units",
-                    "repository_summaries", "repository_summary_evidence"}) {
+                    "repository_summaries", "repository_summary_evidence", "repository_reports",
+                    "repository_report_module_coverage", "repository_findings", "repository_finding_evidence"}) {
                 try (var tables = metadata.getTables(null, null, table, new String[]{"TABLE"})) {
                     assertThat(tables.next()).as(table).isTrue();
                 }

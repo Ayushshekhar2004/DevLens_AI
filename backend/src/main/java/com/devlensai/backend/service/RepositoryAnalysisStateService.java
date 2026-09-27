@@ -2,12 +2,14 @@ package com.devlensai.backend.service;
 
 import com.devlensai.backend.dto.RepositoryAnalysisJobResponse;
 import com.devlensai.backend.dto.RepositorySummaryResponse;
+import com.devlensai.backend.dto.RepositoryReportResponse;
 import com.devlensai.backend.entity.*;
 import com.devlensai.backend.exception.RepositorySnapshotNotFoundException;
 import com.devlensai.backend.repository.RepositoryAnalysisJobRepository;
 import com.devlensai.backend.repository.RepositoryAnalysisStageRepository;
 import com.devlensai.backend.repository.RepositoryAnalysisUnitRepository;
 import com.devlensai.backend.repository.RepositorySummaryRepository;
+import com.devlensai.backend.repository.RepositoryReportRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,11 +25,12 @@ public class RepositoryAnalysisStateService {
     private final RepositoryAnalysisStageRepository stages;
     private final RepositoryAnalysisUnitRepository units;
     private final RepositorySummaryRepository summaries;
+    private final RepositoryReportRepository reports;
 
     public RepositoryAnalysisStateService(RepositoryAnalysisJobRepository jobs,
             RepositoryAnalysisStageRepository stages, RepositoryAnalysisUnitRepository units,
-            RepositorySummaryRepository summaries) {
-        this.jobs = jobs; this.stages = stages; this.units = units; this.summaries = summaries;
+            RepositorySummaryRepository summaries, RepositoryReportRepository reports) {
+        this.jobs = jobs; this.stages = stages; this.units = units; this.summaries = summaries; this.reports = reports;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -143,6 +146,27 @@ public class RepositoryAnalysisStateService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void saveReport(Long jobId, int eligible, int reviewed, int skipped, int unsupported, int incomplete,
+            boolean partial, String label, List<RepositoryModuleCoverage> moduleCoverage,
+            List<RepositoryReviewService.ValidatedFinding> findings) {
+        RepositoryAnalysisJob job = requiredForUpdate(jobId);
+        if (reports.findByJobIdAndJobUserId(jobId, job.getUser().getId()).isPresent()) return;
+        RepositoryReport report = new RepositoryReport(job, partial ? "PARTIAL" : "COMPLETED", eligible, reviewed,
+                skipped, unsupported, incomplete, partial, label, moduleCoverage,
+                job.getUsedCalls(), job.getUsedInputTokens(), job.getUsedOutputTokens());
+        for (var value : findings) report.addFinding(new RepositoryFinding(report, value.id(), value.category(),
+                value.severity(), value.confidence(), value.claim(), value.rationale(), value.primary(), value.related(),
+                value.remediation(), value.provenance(), job.getSnapshotHash(), job.getModelName()));
+        reports.save(report);
+    }
+
+    @Transactional(readOnly = true)
+    public RepositoryReportResponse report(Long jobId, Long userId) {
+        return reports.findByJobIdAndJobUserId(jobId, userId).map(RepositoryReportResponse::from)
+                .orElseThrow(() -> new com.devlensai.backend.exception.RepositoryAnalysisException("Repository report is not available"));
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void skipUnit(Long jobId, Long unitId, String reason) {
         RepositoryAnalysisJob job = requiredForUpdate(jobId);
         RepositoryAnalysisUnit unit = units.findById(unitId).orElseThrow();
@@ -192,7 +216,7 @@ public class RepositoryAnalysisStateService {
     public void deleteForSnapshot(Long snapshotId) {
         List<Long> ids = jobs.findBySnapshotId(snapshotId).stream().map(RepositoryAnalysisJob::getId).toList();
         if (ids.isEmpty()) return;
-        summaries.deleteByJobIdIn(ids); units.deleteByJobIdIn(ids); stages.deleteByJobIdIn(ids); jobs.deleteBySnapshotId(snapshotId);
+        reports.deleteByJobIdIn(ids); summaries.deleteByJobIdIn(ids); units.deleteByJobIdIn(ids); stages.deleteByJobIdIn(ids); jobs.deleteBySnapshotId(snapshotId);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
