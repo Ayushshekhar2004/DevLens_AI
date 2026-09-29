@@ -1,11 +1,27 @@
 # DevLens AI
 
-[Live demo — Gemini-powered snippet review](https://devlensai-production.up.railway.app)
-
-The hosted demo accepts snippets up to 20,000 characters. Repository AI review is experimental: the latest hosted synthetic check returned partial coverage. See the evaluator quick start below for local Ollama setup.
-
-
 DevLens AI is a portfolio project for reviewing submitted source code and suggesting test cases. It provides a React interface, a Spring Boot API, PostgreSQL persistence, JWT authentication, and a replaceable AI provider. It **does not execute submitted code**.
+
+## Live application
+
+**[Open DevLens AI](https://devlensai-production.up.railway.app)** — Gemini-powered snippet review.
+
+1. Create an account and log in.
+2. Select a language and paste a short, focused code snippet.
+3. Click **Analyze Code**, then view the review, suggested tests, and saved history.
+
+The hosted demo accepts up to **20,000 characters per snippet**. AI availability and usage limits can affect requests. Use only code you are authorized to share with the configured cloud provider. Hosting currently uses Railway trial resources, so continued availability is not guaranteed.
+
+**Local AI:** Ollama is supported when running DevLens on your own computer, without a cloud API key. See [Local installation](#local-installation) and the [Evaluator quick start](#evaluator-quick-start-real-local-ai-no-api-key).
+
+**Repository AI:** This is an experimental API workflow. The latest hosted synthetic check returned partial coverage; a successful snippet review does not establish whole-repository analysis reliability.
+
+## Setup and reference
+
+- [Local installation: Docker or standalone](#local-installation)
+- [Evaluator quick start: local Ollama](#evaluator-quick-start-real-local-ai-no-api-key)
+- [Gemini snippet configuration](#gemini-snippet-review)
+- [Explicit Gemini repository analysis](#explicit-gemini-repository-analysis)
 
 ## Problem and approach
 
@@ -14,7 +30,7 @@ Code reviews often need a first pass for possible bugs, edge cases, complexity, 
 ## Working features
 
 - Register, log in, and log out. Analyses, history, and analytics are scoped to the authenticated user.
-- Submit Java, Python, JavaScript, or C++ source text. Blank submissions are rejected.
+- Submit Java, Python, JavaScript, or C++ source text. Blank submissions and snippets over 20,000 characters are rejected.
 - Store a review summary, potential bugs, time/space complexity notes, edge cases, suggestions, and AI-suggested code.
 - Store generated test-case suggestions with category, input, expected output or uncertainty warning, and explanation.
 - Store advisory security findings with severity, location when identifiable, remediation, and uncertainty notes.
@@ -35,7 +51,7 @@ The mock provider returns placeholder feedback, **not a real code review**. It d
 | Backend | Java 21, Spring Boot 4, Maven, Spring Web, Validation, Security, Data JPA |
 | Database | PostgreSQL |
 | Authentication | BCrypt password hashing, signed JWT bearer tokens |
-| AI integration | Replaceable provider interface; mock or OpenAI-compatible HTTP provider |
+| AI integration | Mock, local Ollama, or OpenAI-compatible HTTP provider (including Gemini) |
 | Tests | JUnit/MockMvc/Mockito; Vitest and Testing Library |
 | Containers | Docker Compose, Nginx, PostgreSQL named volume |
 
@@ -47,13 +63,17 @@ Browser
                                           ├─ Auth / analysis / analytics services
                                           ├─ JPA repositories ──> PostgreSQL
                                           ├─ CodeReviewService ──> AI provider interface
-                                                                   ├─ mock
-                                                                   └─ OpenAI-compatible API
+                                          │                        ├─ mock
+                                          │                        ├─ local Ollama
+                                          │                        └─ OpenAI-compatible API (Gemini)
                                           └─ RepositoryAnalysisOrchestrator
-                                               └─ local-only Ollama adapter (no cloud fallback)
+                                               ├─ Ollama (default)
+                                               └─ Gemini (explicit cloud acknowledgement)
 ```
 
-In Docker, Nginx serves the built frontend and proxies `/api` to the `backend` service. The backend reaches PostgreSQL through the Compose service name `db`. In non-Docker development, Vite runs on port 5173 and calls the backend on port 8080 using `VITE_API_BASE_URL` and configured CORS.
+In local Docker Compose, Nginx serves the built frontend and proxies `/api` to the `backend` service. The backend reaches PostgreSQL through the Compose service name `db`. In non-Docker development, Vite runs on port 5173 and calls the backend on port 8080 using `VITE_API_BASE_URL` and configured CORS.
+
+The Railway deployment uses `Dockerfile.railway` to serve the built frontend and API from one Java service, with PostgreSQL and a persistent repository-snapshot volume.
 
 ## Backend architecture
 
@@ -203,7 +223,7 @@ Local repository summaries are reduced hierarchically from chunk to file to modu
 
 Targeted repository context retrieval is deterministic and read-only. It ranks only files already present in the owner-scoped immutable snapshot using: exact path `+1000`, exact symbol `+900`, exact module `+800`, dependency/reverse-dependency proximity from `+475`, relevant tests `+475`, lexical symbols `+400`, task/path matches `+300/+250`, module adjacency `+200`, summary hints `+125`, and bounded content matches `+80`. Ties use relative-path order. Graph depth, candidate count, snippet count, per-file share, line window, and final context tokens are configurable; instruction/output/safety reserves are removed before selection. Context packs state their purpose, path/hash/line provenance, compact hints, selection reasons, unresolved edges, exclusions, missing context, and truncation. The inspection API returns this metadata but never snippet bodies. Relationships reflect indexed imports/API references only and are not a complete runtime call graph.
 
-Repository review adds a bounded local-only pass over those evidence-bearing context packs and hierarchical summary hints. It focuses on validation boundaries, caller/callee contracts, and error handling, and can return insufficient context. Findings use strict categories, qualitative uncertainty, severity, claims, remediation, AI/deterministic provenance, exact snapshot/model identity, and snapshot-validated primary/related locations. Invalid primary citations are rejected; unsupported related citations are removed and downgrade the claim. Stable identifiers, normalized categories, evidence overlap, and deterministic ordering merge duplicate chunk findings while retaining distinct or contradictory conclusions. Reports expose file/module coverage, skipped/unsupported/incomplete work, and budget use. Partial no-findings is explicitly not a clean bill of health, security certification, or correctness guarantee; DevLens never applies or executes suggested patches.
+Repository review adds a bounded provider-backed pass over those evidence-bearing context packs and hierarchical summary hints. It focuses on validation boundaries, caller/callee contracts, and error handling, and can return insufficient context. Findings use strict categories, qualitative uncertainty, severity, claims, remediation, AI/deterministic provenance, exact snapshot/model identity, and snapshot-validated primary/related locations. Invalid primary citations are rejected; unsupported related citations are removed and downgrade the claim. Stable identifiers, normalized categories, evidence overlap, and deterministic ordering merge duplicate chunk findings while retaining distinct or contradictory conclusions. Reports expose file/module coverage, skipped/unsupported/incomplete work, and budget use. Partial no-findings is explicitly not a clean bill of health, security certification, or correctness guarantee; DevLens never applies or executes suggested patches.
 
 `VITE_API_BASE_URL` is embedded in frontend assets at build time; do not put secrets in any `VITE_*` variable. A real provider is optional; a configured key can cause submitted source text to be sent to that external service.
 
@@ -301,9 +321,9 @@ Backend tests cover validation, authentication, ownership, controller responses,
 
 ## Future roadmap
 
-Potential next steps—not current features—include a complete migration baseline for older tables, asynchronous review jobs, stronger automated browser/accessibility testing, account recovery, and deployment hardening. Any code-execution or test-runner capability would require a separate sandbox design and security review.
+Potential next steps—not current features—include a complete migration baseline for older tables, asynchronous snippet review jobs, stronger automated browser/accessibility testing, account recovery, and deployment hardening. Any code-execution or test-runner capability would require a separate sandbox design and security review.
 
-### Gemini snippet review
+## Gemini snippet review
 
 Gemini can use the existing `openai-compatible` snippet provider. In the private root `.env`, set:
 
@@ -323,7 +343,7 @@ After the check passes, start Docker Desktop and run `docker compose up --build`
 
 Provider documentation: https://ai.google.dev/gemini-api/docs/openai
 
-### Explicit Gemini repository analysis
+## Explicit Gemini repository analysis
 
 This is currently an API workflow; the existing browser form reviews snippets. Configure `REPOSITORY_AI_PROVIDER=gemini` and `REPOSITORY_AI_MODEL=gemini-3.1-flash-lite`, with the Gemini key in `AI_API_KEY`. Ollama remains the default in committed examples. Models and free-tier quotas depend on the Google account; a model appearing in the list is not proof that generation is currently available.
 
