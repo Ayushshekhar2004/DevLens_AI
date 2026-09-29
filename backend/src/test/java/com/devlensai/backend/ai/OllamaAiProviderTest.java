@@ -11,6 +11,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -44,6 +45,10 @@ class OllamaAiProviderTest {
             String request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             assertThat(request).contains("installed:latest", "num_predict", "num_ctx", "class Main {}")
                     .doesNotContain("api_key");
+            JsonNode requestJson = mapper.readTree(request);
+            assertThat(requestJson.path("format").path("type").stringValue()).isEqualTo("object");
+            assertThat(requestJson.path("format").path("additionalProperties").booleanValue()).isFalse();
+            assertThat(requestJson.path("options").path("temperature").intValue()).isZero();
             respond(exchange, 200, mapper.writeValueAsString(Map.of("message", Map.of("content", RESULT))));
         });
         server.start();

@@ -138,8 +138,8 @@ public class OllamaAiProvider implements AiCodeReviewProvider {
         String body;
         try {
             body = mapper.writeValueAsString(Map.of(
-                    "model", model, "stream", false, "format", "json",
-                    "options", Map.of("num_predict", outputLimit, "num_ctx", contextBudget),
+                    "model", model, "stream", false, "format", reviewSchema(),
+                    "options", Map.of("temperature", 0, "num_predict", outputLimit, "num_ctx", contextBudget),
                     "messages", List.of(Map.of("role", "system", "content", PROMPT),
                             Map.of("role", "user", "content", "Language: " + language + "\nSource code:\n" + sourceCode))));
         } catch (JacksonException exception) {
@@ -152,6 +152,47 @@ public class OllamaAiProvider implements AiCodeReviewProvider {
         JsonNode content = envelope.path("message").path("content");
         if (!content.isString() || content.stringValue().length() > MAX_RESPONSE_BYTES) throw malformed();
         return parseResult(json(content.stringValue()));
+    }
+
+    private Map<String, Object> reviewSchema() {
+        Map<String, Object> string = Map.of("type", "string");
+        Map<String, Object> stringArray = Map.of("type", "array", "items", string);
+        List<String> testFields = List.of("name", "category", "input", "expectedOutput", "explanation",
+                "confidenceOrWarning");
+        List<String> securityFields = List.of("title", "severity", "explanation", "vulnerableLocation",
+                "suggestedRemediation", "confidenceOrUncertainty");
+        Map<String, Object> testProperties = Map.of(
+                "name", string,
+                "category", Map.of("type", "string", "enum", List.of("NORMAL", "EDGE", "BOUNDARY", "INVALID", "STRESS")),
+                "input", string,
+                "expectedOutput", string,
+                "explanation", string,
+                "confidenceOrWarning", string);
+        Map<String, Object> securityProperties = Map.of(
+                "title", string,
+                "severity", Map.of("type", "string", "enum", List.of("LOW", "MEDIUM", "HIGH", "CRITICAL")),
+                "explanation", string,
+                "vulnerableLocation", string,
+                "suggestedRemediation", string,
+                "confidenceOrUncertainty", string);
+        Map<String, Object> properties = Map.of(
+                "summary", string,
+                "potentialBugs", stringArray,
+                "timeComplexity", string,
+                "spaceComplexity", string,
+                "edgeCases", stringArray,
+                "suggestions", stringArray,
+                "improvedCode", string,
+                "generatedTestCases", objectArray(testProperties, testFields),
+                "securityFindings", objectArray(securityProperties, securityFields));
+        return Map.of("type", "object", "properties", properties,
+                "required", List.copyOf(RESULT_FIELDS), "additionalProperties", false);
+    }
+
+    private Map<String, Object> objectArray(Map<String, Object> properties, List<String> required) {
+        return Map.of("type", "array", "items", Map.of(
+                "type", "object", "properties", properties,
+                "required", required, "additionalProperties", false));
     }
 
     public RepositorySummaryResult summarizeRepositoryValidated(String level, String identity, String untrustedContent,

@@ -204,6 +204,30 @@ Repository review adds a bounded local-only pass over those evidence-bearing con
 
 ### Opt-in local or trusted-LAN Ollama
 
+#### Evaluator quick start (real local AI, no API key)
+
+1. Install and start [Ollama](https://ollama.com/download) on your computer, then download a model, for example `ollama pull qwen2.5-coder:7b`. Check `ollama list` for the exact name. Model speed and memory needs depend on your hardware; start with a short snippet.
+2. Clone this repository and follow the Docker Compose setup above, including private values for `DB_PASSWORD` and `JWT_SECRET`. In the root `.env`, replace these settings:
+
+   ```dotenv
+   AI_PROVIDER=ollama
+   AI_API_KEY=
+   OLLAMA_PROFILES=local|This machine|http://host.docker.internal:11434
+   OLLAMA_DEFAULT_PROFILE=local
+   OLLAMA_MODEL=qwen2.5-coder:7b
+   REPOSITORY_AI_PROVIDER=ollama
+   ```
+
+   The default `mock` provider only returns placeholders. An API key is not required for Ollama. Use the exact model you downloaded if it differs from this example.
+3. Run `docker compose up --build`, open `http://localhost:5173`, create an account, click **Test Connection**, select the installed model, and analyze a small snippet.
+
+For the non-Docker setup above, export the same settings in the backend terminal, but use `OLLAMA_PROFILES='local|This machine|http://localhost:11434'`. Standalone Maven does not automatically load `.env` files.
+
+Docker must be able to reach the host's Ollama listener. Docker Desktop supports `host.docker.internal`; Linux Engine may require an explicit host-gateway mapping or a trusted private host address. If host connectivity succeeds but **Test Connection** fails, check the listener, firewall and Docker/macOS local-network permissions. Follow [Ollama's networking guidance](https://docs.ollama.com/faq); do not expose the model server to the public internet.
+
+A successful **Test Connection** only verifies connectivity and lists installed models. A completed review verifies that the model returned the required structured response. Timeouts or invalid responses can still occur with slow or unsuitable models. Whole-repository analysis is a separate API workflow and is not guaranteed by a successful snippet review.
+
+
 Keep the default `AI_PROVIDER=mock` or `auto` for existing snippet behavior. To use an already installed Ollama model, set `AI_PROVIDER=ollama`, `OLLAMA_MODEL` to that model's exact installed name, and configure `OLLAMA_PROFILES` as comma-separated `id|display name|http://trusted-host:port` entries. Example placeholders are in the root and backend `.env.example` files. The host-run default is `local|This machine|http://localhost:11434`; Docker users must explicitly configure a reachable trusted host address such as `host.docker.internal`, or a private-LAN IPv4 address. No model is downloaded by DevLens. Use `ollama list` and `curl http://localhost:11434/api/tags` on the Ollama machine to verify its installed models and connectivity before starting DevLens. A profile test in DevLens lists models from the selected machine; choose one before submitting code. If that model disappears, the analysis fails with a clear selection error and no cloud fallback.
 
 Only loopback, the explicit Docker host alias, or RFC1918 private IPv4 endpoints are accepted; URL redirects are not followed. Profile URLs come solely from server environment configuration, never normal analysis requests. LAN mode is intended only for trusted private networks. Do not expose Ollama publicly; DevLens does not change firewall or Ollama listener settings.
