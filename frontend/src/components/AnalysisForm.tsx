@@ -99,6 +99,11 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
       return
     }
 
+    if (sourceCode.length > 20000) {
+      setSubmission({ state: 'error', message: 'Please limit your snippet to 20,000 characters.' })
+      return
+    }
+
     if (profilesState !== 'ready') {
       setSubmission({ state: 'error', message: 'Ollama connections are not ready. Refresh the page and try again.' })
       return
@@ -209,7 +214,7 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
         />
 
         <div className="analysis-notes">
-          <p className="field-hint"><strong>Demo Limits:</strong> Please submit short, focused code snippets. Large inputs may exceed AI usage limits or take longer to process.</p>
+          <p className="field-hint"><strong>Demo Limits:</strong> Please submit short, focused code snippets (maximum 20,000 characters). Large inputs may exceed AI usage limits or take longer to process.</p>
           <p className="field-hint"><strong>Local AI:</strong> Ollama is supported when running DevLens on your own machine. This hosted demo uses Gemini.</p>
         </div>
 

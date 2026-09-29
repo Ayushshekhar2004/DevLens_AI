@@ -1,5 +1,10 @@
 # DevLens AI
 
+[Live demo — Gemini-powered snippet review](https://devlensai-production.up.railway.app)
+
+The hosted demo accepts snippets up to 20,000 characters. Repository AI review is experimental: the latest hosted synthetic check returned partial coverage. See the evaluator quick start below for local Ollama setup.
+
+
 DevLens AI is a portfolio project for reviewing submitted source code and suggesting test cases. It provides a React interface, a Spring Boot API, PostgreSQL persistence, JWT authentication, and a replaceable AI provider. It **does not execute submitted code**.
 
 ## Problem and approach

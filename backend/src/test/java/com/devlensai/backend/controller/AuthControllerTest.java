@@ -44,6 +44,17 @@ class AuthControllerTest {
     private UserRepository userRepository;
 
     @Test
+    void rejectsPasswordsThatExceedBcryptByteLimit() throws Exception {
+        String password = "é".repeat(40);
+        for (String endpoint : new String[]{"register", "login"}) {
+            mockMvc.perform(post("/api/auth/" + endpoint).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"Audit User\",\"email\":\"audit@example.com\",\"password\":\"" + password + "\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+        org.mockito.Mockito.verifyNoInteractions(authService);
+    }
+
+    @Test
     void registersUser() throws Exception {
         when(authService.register(any(RegisterRequest.class)))
                 .thenReturn(userResponse());

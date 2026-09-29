@@ -58,6 +58,15 @@ class AnalysisControllerTest {
     private UserRepository userRepository;
 
     @Test
+    void rejectsOversizedSourceBeforeCallingAi() throws Exception {
+        mockMvc.perform(post("/api/analyses").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"language\":\"JAVA\",\"sourceCode\":\"" + "x".repeat(20001) + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.sourceCode").exists());
+        org.mockito.Mockito.verifyNoInteractions(analysisService);
+    }
+
+    @Test
     void createsAnalysis() throws Exception {
         when(analysisService.create(any(), any(CreateAnalysisRequest.class)))
                 .thenReturn(response(1L, ProgrammingLanguage.JAVA));
