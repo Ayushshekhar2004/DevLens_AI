@@ -53,6 +53,9 @@ public class RepositoryAnalysisOrchestrator {
     }
 
     public synchronized RepositoryAnalysisJobResponse start(User user, Long snapshotId, StartRepositoryAnalysisRequest request) {
+        if (provider.requiresCloudConsent() && !Boolean.TRUE.equals(request.allowCloudProcessing())) {
+            throw new RepositoryAnalysisException("Cloud analysis sends repository code to Google Gemini. Set allowCloudProcessing=true only for code you are authorized to share.");
+        }
         RepositoryAnalysisPreparationService.Prepared prepared = preparation.prepare(user, snapshotId);
         provider.validateSelection(request.profileId(), request.model());
         Optional<RepositoryAnalysisJob> duplicate = state.idempotent(snapshotId, request.profileId(), request.model(), prepared.snapshotHash());
@@ -164,7 +167,7 @@ public class RepositoryAnalysisOrchestrator {
         } catch (CancellationException | InterruptedException exception) {
             Thread.currentThread().interrupt(); state.cancelled(jobId);
         } catch (TimeoutException exception) {
-            state.failed(jobId, activeStage, "Local model call timed out");
+            state.failed(jobId, activeStage, "AI provider call timed out");
         } catch (RuntimeException | ExecutionException exception) {
             state.failed(jobId, activeStage, safeFailure(exception));
         } finally {
@@ -219,9 +222,9 @@ public class RepositoryAnalysisOrchestrator {
     private String safeFailure(Exception exception) {
         Throwable cause = exception instanceof ExecutionException && exception.getCause() != null ? exception.getCause() : exception;
         if (cause instanceof OllamaSelectionException) return cause.getMessage();
-        if (cause instanceof AiProviderTimeoutException) return "Local model call timed out";
-        if (cause instanceof AiProviderUnavailableException) return "Local Ollama service is unavailable";
-        if (cause instanceof AiProviderMalformedResponseException) return "Local model returned invalid structured output";
+        if (cause instanceof AiProviderTimeoutException) return "AI provider call timed out";
+        if (cause instanceof AiProviderUnavailableException) return "AI provider is busy or unavailable";
+        if (cause instanceof AiProviderMalformedResponseException) return "AI provider returned invalid structured output";
         if (cause instanceof RepositoryAnalysisException) return cause.getMessage();
         return "Repository analysis failed safely";
     }

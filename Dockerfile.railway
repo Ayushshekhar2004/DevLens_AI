@@ -1,0 +1,26 @@
+# One service serves both the React build and the Java API.
+FROM node:22-alpine AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+ENV VITE_API_BASE_URL=/
+RUN npm run build
+
+FROM maven:3.9-eclipse-temurin-21 AS backend
+WORKDIR /backend
+COPY backend/pom.xml ./
+RUN mvn -q -DskipTests dependency:go-offline
+COPY backend/src ./src
+COPY --from=frontend /frontend/dist/ ./src/main/resources/static/
+RUN mvn -q -DskipTests package
+
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+RUN useradd --system --uid 10001 devlens && mkdir -p /app/data/repository-snapshots
+COPY --from=backend /backend/target/backend-*.jar /app/app.jar
+COPY scripts/railway-entrypoint.sh /app/entrypoint.sh
+RUN chmod 755 /app/entrypoint.sh
+ENV REPOSITORY_STORAGE_ROOT=/app/data/repository-snapshots
+EXPOSE 8080
+ENTRYPOINT ["/app/entrypoint.sh"]

@@ -17,7 +17,7 @@ Code reviews often need a first pass for possible bugs, edge cases, complexity, 
 - View metrics derived from stored records: total analyses, counts by language, recent analyses, generated test-case count, and security findings by severity.
 - Compare original and suggested code, with copy buttons for both. The editor and results include loading, error, and empty states.
 - Import bounded repository ZIP snapshots, track queued/running/terminal scan jobs, and browse an owner-scoped, paginated AI-free inventory of stacks, modules, files, parser coverage, and safe skip counts.
-- Queue bounded repository review jobs against an explicitly selected installed Ollama model. Repository source is chunked with file/hash/line provenance and never falls back to the snippet cloud provider.
+- Queue bounded repository review jobs against an explicitly selected installed Ollama model. Repository source is chunked with file/hash/line provenance. Ollama is the default; an explicitly configured Gemini repository provider requires cloud-processing acknowledgement. There is no automatic cloud fallback.
 - Use a clearly labeled mock provider for local development, or configure an OpenAI-compatible chat-completions provider.
 
 The mock provider returns placeholder feedback, **not a real code review**. It deliberately leaves inferred expected output blank and does not report security findings.
@@ -192,7 +192,7 @@ Never commit populated `.env` files. The root `.env.example` is for Compose; `ba
 
 Repository lifecycle cleanup deletes the snapshot, scan metadata, job rows, and private snapshot files together. Future derived artifacts must remain snapshot-owned so the same deletion boundary applies. Temporary import directories are removed after success or failure. Retention is disabled by default to avoid unexpected data loss; administrators can opt in with `REPOSITORY_RETENTION_DAYS`.
 
-Repository analysis requires a completed deterministic scan and a server-managed Ollama profile plus an installed model selected by name. It processes stable bounded chunks sequentially by default; it never sends the whole repository in one prompt. Token use is conservatively estimated at no more than three UTF-16 characters per input token plus prompt metadata. Jobs become `PARTIAL` when configured budgets leave explicit units skipped. Restart recovery resumes only version/hash-valid checkpointed units; otherwise it marks the job `INTERRUPTED`. No repository source or derived summary is routed to the snippet `AiCodeReviewProvider` or a cloud fallback.
+Repository analysis requires a completed deterministic scan. The default Ollama mode requires a server-managed profile and installed model; explicit Gemini mode uses the administrator-configured cloud model and request acknowledgement. It processes stable bounded chunks sequentially by default; it never sends the whole repository in one prompt. Token use is conservatively estimated at no more than three UTF-16 characters per input token plus prompt metadata. Jobs become `PARTIAL` when configured budgets leave explicit units skipped. Restart recovery resumes only version/hash-valid checkpointed units; otherwise it marks the job `INTERRUPTED`. Repository jobs use a separate provider boundary; they never silently fall back from Ollama to cloud AI.
 
 Local repository summaries are reduced hierarchically from chunk to file to module to repository. Large levels are merged through bounded intermediate batches rather than concatenating every child. Structured results retain responsibilities, key symbols, dependencies, uncertainty, and snapshot-validated path/line evidence; they are summaries, not verified defects or proof of exhaustive understanding. Imported content and child summaries are delimited as untrusted data, and the Ollama request grants no tools. Owner-private cache identities include safe content/dependency identity, model, prompt/schema/parser versions, and analysis-budget configuration, so relevant changes invalidate affected ancestors. The summaries endpoint exposes completed/failed coverage and cache reuse without returning source bodies.
 
@@ -273,3 +273,39 @@ Backend tests cover validation, authentication, ownership, controller responses,
 ## Future roadmap
 
 Potential next steps—not current features—include a complete migration baseline for older tables, asynchronous review jobs, stronger automated browser/accessibility testing, account recovery, and deployment hardening. Any code-execution or test-runner capability would require a separate sandbox design and security review.
+
+### Gemini snippet review
+
+Gemini can use the existing `openai-compatible` snippet provider. In the private root `.env`, set:
+
+```dotenv
+AI_PROVIDER=openai-compatible
+AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+AI_MODEL=gemini-3.1-flash-lite
+AI_TIMEOUT_SECONDS=120
+AI_API_KEY=replace_locally_with_your_gemini_key
+```
+
+Use a model available to your own AI Studio project and quota. Never commit the real key or place it in a `VITE_*` variable. Submitted snippets go to Google; free-tier data may be used to improve Google products. Use public or synthetic code for the demo.
+
+Run `python3 scripts/gemini-smoke.py` from the repository root to make one explicit live request with tiny synthetic Java code through the actual application provider and parser. This requires Java and Maven, but not Docker or PostgreSQL. It loads only the key and model from `.env` without executing the file or printing the key. The live JUnit test is skipped in ordinary test runs. A successful check verifies provider connectivity and response parsing, not review accuracy or the complete application.
+
+After the check passes, start Docker Desktop and run `docker compose up --build` to apply the root configuration. Standalone Maven startup does not automatically load `.env`. These snippet settings alone do not enable Gemini repository jobs; use the explicit configuration below. A 429 response means the model/project quota needs checking; do not retry in a tight loop.
+
+Provider documentation: https://ai.google.dev/gemini-api/docs/openai
+
+### Explicit Gemini repository analysis
+
+This is currently an API workflow; the existing browser form reviews snippets. Configure `REPOSITORY_AI_PROVIDER=gemini` and `REPOSITORY_AI_MODEL=gemini-3.1-flash-lite`, with the Gemini key in `AI_API_KEY`. Ollama remains the default in committed examples. Models and free-tier quotas depend on the Google account; a model appearing in the list is not proof that generation is currently available.
+
+After ZIP import and deterministic scan, submit the analysis-job request with:
+
+```json
+{"profileId":"gemini","model":"gemini-3.1-flash-lite","allowCloudProcessing":true}
+```
+
+Without acknowledgement, the job is rejected before cloud processing. Acknowledgement means repository code and derived summaries may be sent to Google, including the free-tier data-use terms. Do not upload private code without authorization. Source is never executed. Existing chunking, ownership, evidence validation, cancellation, and per-job budgets remain in use. Invalid/truncated JSON and quota/unavailability errors fail explicitly; there is no mock result or local/cloud fallback. This does not provide a global daily spending limit, and public account abuse controls are still needed before unrestricted hosting.
+
+For a limited demo, start with at most 10 files, 20 calls, and 30,000 estimated input tokens per job. These are processing limits, not a claim that all repositories can be analyzed exhaustively. Hosted repository snapshots require a persistent volume.
+
+Run `DEVLENS_SMOKE_API_URL=http://localhost:8080 python3 scripts/gemini-repository-smoke.py` against a running Gemini-configured backend. It imports a tiny synthetic ZIP, verifies the consent gate, then checks completion, summaries and report. It retains its synthetic account and snapshot for inspection. A failed/partial live run is not a successful review. Set `DEVLENS_SMOKE_MODEL` if using another configured model.

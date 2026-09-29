@@ -6,4 +6,7 @@ import jakarta.validation.constraints.Size;
 
 public record StartRepositoryAnalysisRequest(
         @NotBlank @Pattern(regexp = "[a-z][a-z0-9-]{0,31}") String profileId,
-        @NotBlank @Size(max = 128) @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}") String model) { }
+        @NotBlank @Size(max = 128) @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}") String model,
+        Boolean allowCloudProcessing) {
+    public StartRepositoryAnalysisRequest(String profileId, String model) { this(profileId, model, false); }
+}

@@ -29,3 +29,6 @@ data/private/
 .env
 .env.*
 !.env.example
+
+# Local repository snapshots and test imports
+backend/data/

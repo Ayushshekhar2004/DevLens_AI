@@ -14,6 +14,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
 
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.repository-analysis.provider", havingValue = "ollama", matchIfMissing = true)
 public class OllamaRepositoryAnalysisProvider implements RepositoryAnalysisProvider {
     private final OllamaAiProvider delegate;
 

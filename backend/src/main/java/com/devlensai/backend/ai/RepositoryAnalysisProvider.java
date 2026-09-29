@@ -6,8 +6,9 @@ import com.devlensai.backend.dto.RepositorySummaryResult;
 import com.devlensai.backend.dto.RepositoryReviewResult;
 import com.devlensai.backend.entity.ProgrammingLanguage;
 
-/** Local-only boundary for untrusted repository source. */
+/** Explicit provider boundary for untrusted repository source; no automatic cloud fallback. */
 public interface RepositoryAnalysisProvider {
+    default boolean requiresCloudConsent() { return false; }
     void validateSelection(String profileId, String model);
     CodeReviewResult analyze(ProgrammingLanguage language, String source, String profileId, String model);
     RepositorySummaryResult summarize(String level, String identity, String untrustedContent,

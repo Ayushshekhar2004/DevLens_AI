@@ -190,6 +190,8 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
           </>}
         </div>}
 
+        <p className="message">If cloud AI is configured, submitted code is sent to that provider. Use only code you are authorized to share; free Gemini usage may be used to improve Google products.</p>
+
         <div className="editor-heading">
           <label htmlFor="source-code">Source code</label>
           <span>{sourceCode.length} characters</span>

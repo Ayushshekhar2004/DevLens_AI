@@ -70,6 +70,17 @@ class RepositoryAnalysisOrchestratorTest {
     }
 
     @Test
+    void rejectsCloudJobsWithoutAcknowledgementBeforeAnyProviderWork() {
+        provider.cloudConsentRequired = true;
+        var snapshot = repository("cloud.zip", "class Demo {}");
+        assertThatThrownBy(() -> orchestrator.start(owner, snapshot.getId(),
+                new StartRepositoryAnalysisRequest("gemini", "gemini-test")))
+                .isInstanceOf(com.devlensai.backend.exception.RepositoryAnalysisException.class)
+                .hasMessageContaining("allowCloudProcessing=true");
+        assertThat(provider.sources).isEmpty();
+    }
+
+    @Test
     void chunksOversizedFilesWithStableBoundariesAndProvenance() {
         String hugeLine = "x".repeat(4_000);
         RepositoryFileRecord file = new RepositoryFileRecord("src/Large.java", "JAVA", "a".repeat(64), 3,
@@ -124,7 +135,7 @@ class RepositoryAnalysisOrchestratorTest {
         var started = orchestrator.start(owner, snapshot.getId(), new StartRepositoryAnalysisRequest("local", "fake-model"));
         var complete = terminal(owner, started.id());
         assertThat(complete.status()).isEqualTo("FAILED");
-        assertThat(complete.errorMessage()).isEqualTo("Local model call timed out");
+        assertThat(complete.errorMessage()).isEqualTo("AI provider call timed out");
     }
 
     @Test
@@ -321,6 +332,8 @@ class RepositoryAnalysisOrchestratorTest {
     }
 
     static class FakeLocalProvider implements RepositoryAnalysisProvider {
+        volatile boolean cloudConsentRequired;
+        @Override public boolean requiresCloudConsent() { return cloudConsentRequired; }
         volatile Mode mode = Mode.SUCCESS;
         final List<String> sources = new CopyOnWriteArrayList<>();
         final List<String> levels = new CopyOnWriteArrayList<>();
@@ -328,7 +341,7 @@ class RepositoryAnalysisOrchestratorTest {
         final AtomicInteger maxConcurrent = new AtomicInteger();
         volatile CountDownLatch entered = new CountDownLatch(1);
         volatile CountDownLatch release = new CountDownLatch(1);
-        void reset() { mode = Mode.SUCCESS; sources.clear(); levels.clear(); concurrent.set(0); maxConcurrent.set(0); entered = new CountDownLatch(1); release = new CountDownLatch(1); }
+        void reset() { cloudConsentRequired = false; mode = Mode.SUCCESS; sources.clear(); levels.clear(); concurrent.set(0); maxConcurrent.set(0); entered = new CountDownLatch(1); release = new CountDownLatch(1); }
         @Override public void validateSelection(String profile, String model) { if ("missing".equals(model)) throw new OllamaSelectionException("Selected Ollama model is no longer installed on this connection"); }
         @Override public CodeReviewResult analyze(ProgrammingLanguage language, String source, String profile, String model) {
             return new CodeReviewResult("Synthetic local summary", List.of(), "O(n)", "O(1)", List.of(), List.of(), "", List.of(), List.of());
