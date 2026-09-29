@@ -208,6 +208,11 @@ export function AnalysisForm({ token, onUnauthorized }: AnalysisFormProps) {
           disabled={submission.state === 'loading'}
         />
 
+        <div className="analysis-notes">
+          <p className="field-hint"><strong>Demo Limits:</strong> Please submit short, focused code snippets. Large inputs may exceed AI usage limits or take longer to process.</p>
+          <p className="field-hint"><strong>Local AI:</strong> Ollama is supported when running DevLens on your own machine. This hosted demo uses Gemini.</p>
+        </div>
+
         <div className="form-footer">
           <button className="analyze-button" type="submit"
             disabled={submission.state === 'loading' || profilesState !== 'ready'}>
